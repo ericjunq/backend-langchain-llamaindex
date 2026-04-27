@@ -1,4 +1,4 @@
-from sqlalchemy import Column, func, ForeignKey, String, Boolean, DateTime, Integer, Float
+from sqlalchemy import Column, func, UniqueConstraint, ForeignKey, String, Boolean, DateTime, Integer, Float
 from sqlalchemy.orm import relationship
 from database import Base
 from utils.gerar_codigo_produto import gerar_codigo_produto
@@ -18,5 +18,9 @@ class Produtos(Base):
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+
     empresa = relationship("Empresa", back_populates="produtos")
+
+    __table_args__ = (
+        UniqueConstraint('empresa_id', 'codigo_produto', name='uq_produto_codigo_empresa'),
+    )

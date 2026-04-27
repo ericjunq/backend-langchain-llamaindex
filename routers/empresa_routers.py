@@ -1,15 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from schemas.empresa_schema import EmpresaCreate, EmpresaResponse, EmpresaUpdate
+from schemas.empresa_schema import EmpresaCreate, EmpresaResponse, EmpresaUpdate, CargosFuncionarios
 from security.dependencies import get_db
 from models.empresa_model import Empresa
 from models.usuario_model import Usuarios
 from security.security import get_current_user
 from utils.enums import CargosEnum
+from schemas.usuario_schema import UsuarioResponse
 
 empresa_router = APIRouter(prefix='/empresa', tags=['empresa'])
 
-@empresa_router.post('/criar_empresa', response_model=EmpresaResponse)
+@empresa_router.post('/criar_empresa', response_model=EmpresaResponse   )
 async def criar_empresa(
     empresaschema: EmpresaCreate,
     db: Session = Depends(get_db),
@@ -78,14 +79,14 @@ async def editar_empresa(
     
     dados_update = dados.dict(exclude_unset=True)
 
-    if 'email' in dados_update:
+    if 'email' in dados_update and dados_update['email']:
         email_existente = db.query(Empresa).filter(
             Empresa.email == dados_update['email']
         ).first()
         if email_existente and email_existente.id != empresa.id:
             raise HTTPException(status_code=400, detail='Email já cadastrado')
     
-    if 'telefone' in dados_update:
+    if 'telefone' in dados_update and dados_update['telefone']:
         telefone_existente = db.query(Empresa).filter(
             Empresa.telefone == dados_update['telefone']
         ).first()
@@ -99,3 +100,33 @@ async def editar_empresa(
     db.refresh(empresa)
 
     return empresa
+
+@empresa_router.patch('/editar_cargo_funcionario/{id}', response_model=UsuarioResponse)
+async def editar_cargo(
+    id: int,
+    cargo: CargosFuncionarios,
+    db: Session = Depends(get_db),
+    usuario: Usuarios = Depends(get_current_user)
+):
+    if usuario.cargo != CargosEnum.dono:
+        raise HTTPException(status_code=403, detail='Sem permissão para editar cargos')
+    
+    funcionario = db.query(Usuarios).filter(
+        Usuarios.id == id,
+        Usuarios.empresa_id == usuario.empresa_id
+    ).first()
+
+    if funcionario.id == usuario.id:
+        raise HTTPException(status_code=403, detail='Você não pode alterar seu próprio cargo')
+
+    if funcionario is None:
+        raise HTTPException(status_code=404, detail='Funcionário não encontrado ou não pertence a empresa')
+    
+    if funcionario.cargo == CargosEnum.dono:
+        raise HTTPException(status_code=403, detail='Não é possível alterar o cargo do dono')
+    funcionario.cargo = cargo.cargo
+
+    db.commit()
+    db.refresh(funcionario)
+
+    return funcionario

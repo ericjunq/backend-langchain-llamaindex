@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from security.validations import CNPJ, Telefone
 from datetime import datetime
+from utils.enums import CargosFuncionarios
 
 class EmpresaCreate(BaseModel):
     nome: str
@@ -19,3 +20,6 @@ class EmpresaResponse(BaseModel):
 class EmpresaUpdate(BaseModel):
     email: Optional[EmailStr]
     telefone: Optional[Telefone]
+
+class CargosFuncionarios(BaseModel):
+    cargo: CargosFuncionarios

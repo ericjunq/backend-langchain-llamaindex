@@ -84,14 +84,14 @@ async def editar_usuario(
 ):
     dados_update = dados.dict(exclude_unset=True)
 
-    if 'email' in dados_update:
+    if 'email' in dados_update and dados_update['email']:
         email_existente = db.query(Usuarios).filter(
             Usuarios.email == dados_update['email']
         ).first()
         if email_existente and email_existente.id != usuario.id:
             raise HTTPException(status_code=400, detail='Email já cadastrado')
     
-    if 'telefone' in dados_update:
+    if 'telefone' in dados_update and dados_update['telefone']:
         telefone_existente = db.query(Usuarios).filter(
             Usuarios.telefone == dados_update['telefone']
         ).first()
