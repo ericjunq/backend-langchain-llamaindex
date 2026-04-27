@@ -9,7 +9,7 @@ from utils.enums import CargosEnum
 
 empresa_router = APIRouter(prefix='/empresa', tags=['empresa'])
 
-@empresa_router.post('/criar_empresa', response_model=EmpresaResponsew)
+@empresa_router.post('/criar_empresa', response_model=EmpresaResponse)
 async def criar_empresa(
     empresaschema: EmpresaCreate,
     db: Session = Depends(get_db),
