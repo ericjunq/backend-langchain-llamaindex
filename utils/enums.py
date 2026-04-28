@@ -8,3 +8,8 @@ class CargosEnum(str, Enum):
 class CargosFuncionarios(str, Enum):
     admin = 'admin'
     funcionario = 'funcionario'
+
+class DataFilter(str, Enum):
+    mes = "mes"
+    semestre = "semestre"
+    ano = "ano"

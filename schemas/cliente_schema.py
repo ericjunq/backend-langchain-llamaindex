@@ -19,3 +19,9 @@ class ClienteUpdate(BaseModel):
     nome: Optional[str]=None
     email: Optional[EmailStr]=None
     telefone: Optional[Telefone]=None
+
+class FiltrarCliente(BaseModel):
+    nome = Optional[str]=None
+    email = Optional[str]=None
+    cpf: Optional[CPF]
+    telefone: Optional[Telefone]

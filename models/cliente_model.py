@@ -13,6 +13,8 @@ class Clientes(Base):
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     status = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     empresa = relationship("Empresa", back_populates="clientes")
     usuario = relationship("Usuarios", back_populates="cliente")
