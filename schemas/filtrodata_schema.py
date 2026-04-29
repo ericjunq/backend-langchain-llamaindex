@@ -7,5 +7,5 @@ class Periodo(BaseModel):
     periodo: DataFilter
 
 class DataFilter(BaseModel):
-    data_inicial: datetime
+    data_inicial: Optional[datetime] = None
     data_final: Optional[datetime] = None

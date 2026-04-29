@@ -29,3 +29,11 @@ class ProdutoUpdate(BaseModel):
 
 class ProdutoReposicaoEstoque(BaseModel):
     quantidade: int
+
+class FiltrarProdutos(BaseModel):
+    nome: Optional[str]=None
+    nome_normalizado: Optional[str]=None
+    codigo_produto: Optional[str]=None
+    preco_compra: Optional[float]=None
+    preco_venda: Optional[float]=None
+    estoque_min: Optional[int]=None

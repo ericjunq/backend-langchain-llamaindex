@@ -7,8 +7,9 @@ from models.usuario_model import Usuarios
 from security.security import get_current_user
 from utils.enums import CargosEnum
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from schemas.filtrodata_schema import DataFilter, Periodo
+from utils.data_filter import get_data_filter
 
 cliente_router = APIRouter(prefix='/cliente', tags=['clientes'])
 
@@ -109,12 +110,12 @@ async def deletar_cliente(
     db.delete(cliente)
     db.commit()
 
-    return "Cliente deletado com sucesso"
+    return {"message": "Cliente deletado com sucesso"}
 
 @cliente_router.get('/listar_clientes', response_model=List[ClienteResponse])
 async def listar_clientes(
     periodo: Optional[Periodo] = None,
-    datafilter: Optional[DataFilter]=None,
+    datafilter: DataFilter = Depends(get_data_filter),
     db: Session = Depends(get_db),
     usuario: Usuarios = Depends(get_current_user)
 ):
@@ -129,7 +130,7 @@ async def listar_clientes(
     )
 
     if periodo:
-        inicio = datetime.now()
+        inicio = datetime.now(timezone.utc)
         if periodo.periodo == 'mes':
             inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
             query = query.filter(
@@ -140,15 +141,13 @@ async def listar_clientes(
             inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
             if inicio.month <= 6:
                 inicio = inicio.replace(month=1)
-                query = query.filter(
-                    Clientes.created_at >= inicio
-                )
-            
             else:
                 inicio = inicio.replace(month=7)
-                query = query.filter(
+                
+            query = query.filter(
                     Clientes.created_at>=inicio
                 )
+                
         
         elif periodo.periodo == 'ano':
             inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -157,18 +156,10 @@ async def listar_clientes(
             )
 
     if datafilter:
-        if datafilter.data_final is None:
-            query = query.filter(
-                Clientes.created_at>=datafilter.data_inicial
-            )
-
-        else:
-            if datafilter.data_final <= datafilter.data_inicial:
-                raise HTTPException(status_code=400, detail="Data final menor que inicial")
-            query = query.filter(
-                Clientes.created_at >= datafilter.data_inicial,
-                Clientes.created_at <= datafilter.data_final
-            )
+        query = query.filter(
+            Clientes.created_at >= datafilter.data_inicial,
+            Clientes.created_at <= datafilter.data_final
+        )
         
     return query.all()
 

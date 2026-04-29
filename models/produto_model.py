@@ -9,7 +9,8 @@ class Produtos(Base):
 
     id = Column(Integer, autoincrement=True, primary_key=True)
     nome = Column(String(30), nullable=False)
-    codigo_produto = Column(UUID(as_uuid=True), unique=True, index=True, default=gerar_codigo_produto)
+    nome_normalizado = Column(String(30), index=True, nullable=False)
+    codigo_produto = Column(UUID(as_uuid=True),  index=True, default=gerar_codigo_produto)
     descricao = Column(String, nullable=False)
     quantidade = Column(Integer, nullable=False)
     preco_compra = Column(Float, nullable=False)
@@ -23,4 +24,5 @@ class Produtos(Base):
 
     __table_args__ = (
         UniqueConstraint('empresa_id', 'codigo_produto', name='uq_produto_codigo_empresa'),
+        UniqueConstraint("nome_normalizado", "empresa_id", name="uq_produto_nome_empresa")
     )

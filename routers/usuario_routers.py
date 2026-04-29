@@ -82,7 +82,7 @@ async def editar_usuario(
     db: Session = Depends(get_db),
     usuario: Usuarios = Depends(get_current_user)
 ):
-    dados_update = dados.dict(exclude_unset=True)
+    dados_update = dados.model_dump(exclude_unset=True)
 
     if 'email' in dados_update and dados_update['email']:
         email_existente = db.query(Usuarios).filter(
