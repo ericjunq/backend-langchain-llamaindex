@@ -7,7 +7,10 @@ from models.usuario_model import Usuarios
 from security.security import get_current_user
 from utils.enums import CargosEnum
 from schemas.usuario_schema import UsuarioResponse, FuncionarioFiltro
-from typing import List, Optional
+from typing import List
+from models.convite_funcionario import Convite
+from utils.convidar_funcionario import gerar_convite
+from schemas.convite_schema import ConviteResponse
 
 empresa_router = APIRouter(prefix='/empresa', tags=['empresa'])
 
@@ -198,3 +201,26 @@ async def listar_funcionarios(
 
     return query.all()
 
+@empresa_router.post('/gerar_convite', response_model=ConviteResponse)
+async def criar_convite(
+    db: Session = Depends(get_db),
+    usuario: Usuarios = Depends(get_current_user)
+):
+    if usuario.empresa_id is None:
+        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
+    
+    if usuario.cargo != CargosEnum.dono:
+        raise HTTPException(status_code=403, detail='Você não tem permissão para criar convites')
+    
+    token = gerar_convite()
+
+    convite = Convite(
+        token = token,
+        empresa_id=usuario.empresa_id
+    )
+
+    db.add(convite)
+    db.commit()
+    db.refresh(convite)
+
+    return convite

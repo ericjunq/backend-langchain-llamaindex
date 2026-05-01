@@ -5,6 +5,9 @@ from security.dependencies import get_db
 from schemas.usuario_schema import UsuarioResponse, UsuarioSchema, UsuarioUpdate
 from security.security import verificar_senha, criptografar_senha, criar_access_token, criar_refresh_token, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
+from models.convite_funcionario import Convite
+from datetime import timezone, datetime
+from schemas.convite_schema import EnviarConvite
 
 usuario_router = APIRouter(prefix="/usuario", tags=["usuario"])
 
@@ -108,3 +111,37 @@ async def editar_usuario(
     db.refresh(usuario)
 
     return usuario
+
+@usuario_router.patch('/vincular_empresa', response_model=UsuarioResponse)
+async def vincular_empresa(
+    token: EnviarConvite,
+    db: Session = Depends(get_db),
+    usuario: Usuarios = Depends(get_current_user)
+):
+    if usuario.empresa_id:
+        raise HTTPException(status_code=403, detail='Você já está vinculado a uma empresa')
+    
+    convite = db.query(Convite).filter(
+        Convite.token == token.token
+    ).first()
+    if convite is None:
+        raise HTTPException(status_code=404, detail='Convite inválido ou não encontrado')
+    
+    if convite.usado:
+            raise HTTPException(status_code=409, detail='Convite já utilizado')
+
+    if convite.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail='Token expirado')
+    
+    usuario.empresa_id = convite.empresa_id
+    convite.usuario_id = usuario.id
+    convite.usado = True
+
+    db.commit()
+    db.refresh(convite)
+    db.refresh(usuario)
+
+    return usuario
+    
+
+    
