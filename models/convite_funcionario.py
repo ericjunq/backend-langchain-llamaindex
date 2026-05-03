@@ -1,7 +1,6 @@
 from database import Base
 from sqlalchemy import DateTime, Integer, Column, func, ForeignKey, String, Boolean
 from sqlalchemy.orm import relationship
-from utils.convidar_funcionario import gerar_convite
 from datetime import timedelta, datetime, timezone
 
 class Convite(Base):

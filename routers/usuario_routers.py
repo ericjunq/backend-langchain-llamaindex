@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from models.convite_funcionario import Convite
 from datetime import timezone, datetime
 from schemas.convite_schema import EnviarConvite
+from models.refresh_token import RefreshToken
 
 usuario_router = APIRouter(prefix="/usuario", tags=["usuario"])
 
@@ -66,12 +67,26 @@ async def login(
         raise HTTPException(status_code=401, detail="Senha incorreta")
     
     access_token = criar_access_token(
-        data = {'sub': dados.username, 'type': 'access'}
+        data = {'sub': usuario.id}
     )
 
-    refresh_token = criar_refresh_token(
-        data = {'sub': dados.username, 'type': 'refresh'}
+    refresh_token, jti, expires = criar_refresh_token(
+        data = {'sub': usuario.id}
     )
+
+    # Reaproveitando func de criptografar senha
+    token_criptografado = criptografar_senha(refresh_token)
+
+    add_refresh_token = RefreshToken(
+        jti=jti,
+        token_hash=token_criptografado,
+        usuario_id=usuario.id,
+        expires_at=expires
+    )
+
+    db.add(add_refresh_token)
+    db.commit()
+    db.refresh(add_refresh_token)
 
     return {
         "access_token": access_token,
@@ -142,6 +157,3 @@ async def vincular_empresa(
     db.refresh(usuario)
 
     return usuario
-    
-
-    
