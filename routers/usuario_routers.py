@@ -1,14 +1,12 @@
-from fastapi import Depends, HTTPException, APIRouter
+from fastapi import Depends, APIRouter
 from sqlalchemy.orm import Session
 from models.usuario_model import Usuarios
 from security.dependencies import get_db
 from schemas.usuario_schema import UsuarioResponse, UsuarioSchema, UsuarioUpdate
-from security.security import verificar_senha, criptografar_senha, criar_access_token, criar_refresh_token, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
-from models.convite_funcionario import Convite
-from datetime import timezone, datetime
-from schemas.convite_schema import EnviarConvite
-from models.refresh_token import RefreshToken
+from schemas.convite_schema import UsarConvite
+import services.usuario_service
+from security.security import get_current_user
 
 usuario_router = APIRouter(prefix="/usuario", tags=["usuario"])
 
@@ -17,82 +15,14 @@ async def cadastrar_usuario(
     usuarioschema: UsuarioSchema,
     db: Session=Depends(get_db)
 ):
-    email_existente = db.query(Usuarios).filter(
-        Usuarios.email == usuarioschema.email
-    ).first()
-    if email_existente:
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    
-    cpf_existente = db.query(Usuarios).filter(
-        Usuarios.cpf == usuarioschema.cpf
-    ).first()
-    if cpf_existente:
-        raise HTTPException(status_code=400, detail="CPF já cadastrado")
-    
-    telefone_existente = db.query(Usuarios).filter(
-        Usuarios.telefone == usuarioschema.telefone
-    ).first()
-    if telefone_existente:
-        raise HTTPException(status_code=400, detail="Telefone já cadastrado")
-    
-    senha_criptografada = criptografar_senha(usuarioschema.senha)
-
-    usuario = Usuarios(
-        nome=usuarioschema.nome,
-        sobrenome=usuarioschema.sobrenome,
-        email=usuarioschema.email,
-        senha_hash=senha_criptografada,
-        cpf=usuarioschema.cpf,
-        telefone=usuarioschema.telefone
-    )
-
-    db.add(usuario)
-    db.commit()
-    db.refresh(usuario)
-
-    return usuario
+    return services.usuario_service.cadastrar_usuario(usuarioschema, db)
 
 @usuario_router.post("/login")
 async def login(
     dados: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    usuario = db.query(Usuarios).filter(
-        Usuarios.email == dados.username
-    ).first()
-    if usuario is None:
-        raise HTTPException(status_code=404, detail="Email incorreto")
-    
-    if not verificar_senha(dados.password, usuario.senha_hash):
-        raise HTTPException(status_code=401, detail="Senha incorreta")
-    
-    access_token = criar_access_token(
-        data = {'sub': usuario.id}
-    )
-
-    refresh_token, jti, expires = criar_refresh_token(
-        data = {'sub': usuario.id}
-    )
-
-    # Reaproveitando func de criptografar senha
-    token_criptografado = criptografar_senha(refresh_token)
-
-    add_refresh_token = RefreshToken(
-        jti=jti,
-        token_hash=token_criptografado,
-        usuario_id=usuario.id,
-        expires_at=expires
-    )
-
-    db.add(add_refresh_token)
-    db.commit()
-    db.refresh(add_refresh_token)
-
-    return {
-        "access_token": access_token,
-        "refresh_token":refresh_token,
-        "token_type":"bearer"
-    }
+    return services.usuario_service.login(email=dados.username, senha=dados.password, db=db)
 
 @usuario_router.patch('/editar_usuario', response_model=UsuarioResponse)
 async def editar_usuario(
@@ -100,60 +30,12 @@ async def editar_usuario(
     db: Session = Depends(get_db),
     usuario: Usuarios = Depends(get_current_user)
 ):
-    dados_update = dados.model_dump(exclude_unset=True)
-
-    if 'email' in dados_update and dados_update['email']:
-        email_existente = db.query(Usuarios).filter(
-            Usuarios.email == dados_update['email']
-        ).first()
-        if email_existente and email_existente.id != usuario.id:
-            raise HTTPException(status_code=400, detail='Email já cadastrado')
-    
-    if 'telefone' in dados_update and dados_update['telefone']:
-        telefone_existente = db.query(Usuarios).filter(
-            Usuarios.telefone == dados_update['telefone']
-        ).first()
-        if telefone_existente and telefone_existente.id != usuario.id:
-            raise HTTPException(status_code=400, detail='Telefone já cadastrado')
-    
-    if 'senha' in dados_update:
-        dados_update['senha_hash'] = criptografar_senha(dados_update.pop('senha'))
-    
-    for campo, valor in dados_update.items():
-        setattr(usuario, campo, valor)
-
-    db.commit()
-    db.refresh(usuario)
-
-    return usuario
+    return services.usuario_service.editar_usuario(db, dados, usuario)
 
 @usuario_router.patch('/vincular_empresa', response_model=UsuarioResponse)
 async def vincular_empresa(
-    token: EnviarConvite,
+    token: UsarConvite,
     db: Session = Depends(get_db),
     usuario: Usuarios = Depends(get_current_user)
 ):
-    if usuario.empresa_id:
-        raise HTTPException(status_code=403, detail='Você já está vinculado a uma empresa')
-    
-    convite = db.query(Convite).filter(
-        Convite.token == token.token
-    ).first()
-    if convite is None:
-        raise HTTPException(status_code=404, detail='Convite inválido ou não encontrado')
-    
-    if convite.usado:
-            raise HTTPException(status_code=409, detail='Convite já utilizado')
-
-    if convite.expires_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=410, detail='Token expirado')
-    
-    usuario.empresa_id = convite.empresa_id
-    convite.usuario_id = usuario.id
-    convite.usado = True
-
-    db.commit()
-    db.refresh(convite)
-    db.refresh(usuario)
-
-    return usuario
+    return services.usuario_service.vincular_empresa(token, db, usuario)

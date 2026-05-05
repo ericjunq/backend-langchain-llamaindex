@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class EnviarConvite(BaseModel):
+class UsarConvite(BaseModel):
     token: str
 
 class ConviteResponse(BaseModel):

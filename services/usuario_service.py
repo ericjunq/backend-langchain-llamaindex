@@ -1,0 +1,156 @@
+from models.usuario_model import Usuarios
+from schemas.usuario_schema import UsuarioSchema, UsuarioUpdate
+from sqlalchemy.orm import Session
+from fastapi import HTTPException
+from security.security import verificar_senha, criptografar_senha, criar_access_token, criar_refresh_token
+from models.refresh_token import RefreshToken
+from schemas.convite_schema import UsarConvite
+from models.convite_funcionario import Convite
+from datetime import datetime, timezone
+
+# Função de cadastro do Usuário
+def cadastrar_usuario(
+    usuarioschema: UsuarioSchema,
+    db: Session
+):
+    email_existente = db.query(Usuarios).filter(
+        Usuarios.email == usuarioschema.email
+    ).first()
+    if email_existente:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+    
+    cpf_existente = db.query(Usuarios).filter(
+        Usuarios.cpf == usuarioschema.cpf
+    ).first()
+    if cpf_existente:
+        raise HTTPException(status_code=400, detail="CPF já cadastrado")
+    
+    telefone_existente = db.query(Usuarios).filter(
+        Usuarios.telefone == usuarioschema.telefone
+    ).first()
+    if telefone_existente:
+        raise HTTPException(status_code=400, detail="Telefone já cadastrado")
+    
+    senha_criptografada = criptografar_senha(usuarioschema.senha)
+
+    usuario = Usuarios(
+        nome=usuarioschema.nome,
+        sobrenome=usuarioschema.sobrenome,
+        email=usuarioschema.email,
+        senha_hash=senha_criptografada,
+        cpf=usuarioschema.cpf,
+        telefone=usuarioschema.telefone
+    )
+
+    db.add(usuario)
+    db.commit()
+    db.refresh(usuario)
+
+    return usuario
+
+# Função de Login do Usuário
+def login(
+    email: str,
+    senha: str,
+    db: Session
+):
+    usuario = db.query(Usuarios).filter(
+        Usuarios.email == email
+    ).first()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Credenciais inválidas")
+    
+    if not verificar_senha(senha, usuario.senha_hash):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    
+    access_token = criar_access_token(
+        data = {'sub': usuario.id}
+    )
+
+    refresh_token, jti, expires = criar_refresh_token(
+        data = {'sub': usuario.id}
+    )
+
+    # Reaproveitando func de criptografar senha
+    token_criptografado = criptografar_senha(refresh_token)
+
+    add_refresh_token = RefreshToken(
+        jti=jti,
+        token_hash=token_criptografado,
+        usuario_id=usuario.id,
+        expires_at=expires
+    )
+
+    db.add(add_refresh_token)
+    db.commit()
+    db.refresh(add_refresh_token)
+
+    return {
+        "access_token": access_token,
+        "refresh_token":refresh_token,
+        "token_type":"bearer"
+    }
+
+# Função de Editar usuário
+def editar_usuario(
+    db: Session,
+    dados: UsuarioUpdate,
+    usuario: Usuarios
+):
+    dados_update = dados.model_dump(exclude_unset=True)
+
+    if 'email' in dados_update and dados_update['email']:
+        email_existente = db.query(Usuarios).filter(
+            Usuarios.email == dados_update['email']
+        ).first()
+        if email_existente and email_existente.id != usuario.id:
+            raise HTTPException(status_code=400, detail='Email já cadastrado')
+    
+    if 'telefone' in dados_update and dados_update['telefone']:
+        telefone_existente = db.query(Usuarios).filter(
+            Usuarios.telefone == dados_update['telefone']
+        ).first()
+        if telefone_existente and telefone_existente.id != usuario.id:
+            raise HTTPException(status_code=400, detail='Telefone já cadastrado')
+    
+    if 'senha' in dados_update:
+        dados_update['senha_hash'] = criptografar_senha(dados_update.pop('senha'))
+    
+    for campo, valor in dados_update.items():
+        setattr(usuario, campo, valor)
+
+    db.commit()
+    db.refresh(usuario)
+
+    return usuario
+
+# Rota pra vincular Usuário a uma empresa
+def vincular_empresa(
+    token: UsarConvite,
+    db: Session,
+    usuario: Usuarios
+):
+    if usuario.empresa_id:
+        raise HTTPException(status_code=403, detail='Você já está vinculado a uma empresa')
+    
+    convite = db.query(Convite).filter(
+        Convite.token == token.token
+    ).first()
+    if convite is None:
+        raise HTTPException(status_code=404, detail='Convite inválido ou não encontrado')
+    
+    if convite.usado:
+            raise HTTPException(status_code=409, detail='Convite já utilizado')
+
+    if convite.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail='Token expirado')
+    
+    usuario.empresa_id = convite.empresa_id
+    convite.usuario_id = usuario.id
+    convite.usado = True
+
+    db.commit()
+    db.refresh(convite)
+    db.refresh(usuario)
+
+    return usuario
