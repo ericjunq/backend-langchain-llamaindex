@@ -157,6 +157,9 @@ def listar_vendas(
 
     return query.all()
 
+# Função para listar vendas de um funcionário
+# Dono e Admin podem listar todos as vendas de qualquer funcionário
+# Funcionário só pode listar as próprias vendas
 def listar_vendas_funcionario(
         id: int,
         db: Session,
