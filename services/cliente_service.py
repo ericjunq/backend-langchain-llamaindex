@@ -62,6 +62,9 @@ def editar_cliente(
         Clientes.empresa_id == usuario.empresa_id
     ).first()
 
+    if usuario.cargo == CargosEnum.funcionario and cliente.usuario_id != usuario.id:
+        raise HTTPException(status_code=403, detail='Você só pode editar seus próprios clientes')
+
     if cliente is None:
         raise HTTPException(status_code=404, detail='Cliente não encontrado')
     
@@ -209,10 +212,14 @@ def buscar_cliente(
     return query.all()
 
 # Buscar clientes de um funcionário
+# Dono e Admin podem listar todos os clientes de qualquer funcionário
+# Funcionário só pode listar os próprios clientes
 def buscar_clientes_por_funcionario(
     usuario_id: int,
     db: Session,
-    usuario: Usuarios
+    usuario: Usuarios,
+    periodo: Optional[Periodo]=None,
+    datafilter: Optional[DataFilter]=None
 ):
     if usuario.empresa_id is None:
         raise HTTPException(status_code=403, detail='Você não pertence à nenhuma empresa')
@@ -224,9 +231,47 @@ def buscar_clientes_por_funcionario(
     if funcionario is None:
         raise HTTPException(status_code=404, detail='Funcionario não encontrado')
     
-    clientes = db.query(Clientes).filter(
-        Clientes.empresa_id==usuario.empresa_id,
-        Clientes.usuario_id == usuario_id
-    ).all()
+    if usuario.cargo == CargosEnum.funcionario and usuario.id != funcionario.id:
+        raise HTTPException(status_code=403, detail="Você só pode listar seus próprios funcionários")
 
-    return clientes
+    query = db.query(Clientes).filter(
+        Clientes.empresa_id==usuario.empresa_id,
+        Clientes.usuario_id == funcionario.id
+    )
+
+    if periodo:
+        inicio = datetime.now(timezone.utc)
+        if periodo.periodo == DFEnum.mes:
+            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
+            query = query.filter(
+                Clientes.created_at>=inicio
+            )
+        
+        elif periodo.periodo == DFEnum.semestre:
+            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
+            if inicio.month <= 6:
+                inicio = inicio.replace(month=1)
+            else:
+                inicio = inicio.replace(month=7)
+                
+            query = query.filter(
+                    Clientes.created_at>=inicio
+                )
+                
+        
+        elif periodo.periodo == DFEnum.ano:
+            inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Clientes.created_at >= inicio
+            )
+
+    if datafilter:
+        query = query.filter(
+            Clientes.created_at >= datafilter.data_inicial,
+            Clientes.created_at <= datafilter.data_final
+        )
+        
+    return query.all()
+
+
+    return query.all()

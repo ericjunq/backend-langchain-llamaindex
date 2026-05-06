@@ -5,6 +5,10 @@ from models.produto_model import Produtos
 from models.usuario_model import Usuarios
 from models.vendas_model import Vendas, ItemVendas
 from utils.enums import CargosEnum, StatusVenda
+from utils.enums import DataFilter as DFEnum
+from schemas.filtrodata_schema import Periodo, DataFilter
+from typing import Optional
+from datetime import datetime, timezone
 
 # Função pra criar venda
 def criar_venda(
@@ -105,3 +109,112 @@ def cancelar_venda(
     db.refresh(venda)
 
     return venda
+
+def listar_vendas(
+        db: Session,
+        usuario: Usuarios,
+        periodo: Optional[Periodo]=None,
+        datafilter: Optional[DataFilter]=None
+):
+    if usuario.empresa_id is None:
+        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
+    
+    if periodo and datafilter:
+        raise HTTPException(status_code=400, detail="Use apenas um filtro por vez")
+    
+    query = db.query(Vendas).filter(
+        Vendas.empresa_id == usuario.empresa_id
+    )
+
+    if periodo:
+        inicio = datetime.now(timezone.utc)
+        if periodo.periodo == DFEnum.mes:
+            inicio = inicio.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+        
+        elif periodo.periodo == DFEnum.semestre:
+            if inicio.month <= 6:
+                inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:
+                inicio = inicio.replace(month=7, day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+        
+        elif periodo.periodo == DFEnum.ano:
+            inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+    
+    if datafilter:
+        query = query.filter(
+            Vendas.created_at >= datafilter.data_inicial,
+            Vendas.created_at <= datafilter.data_final
+        )
+
+    return query.all()
+
+def listar_vendas_funcionario(
+        id: int,
+        db: Session,
+        usuario: Usuarios,
+        periodo: Optional[Periodo]=None,
+        datafilter: Optional[DataFilter]=None
+):
+    if usuario.empresa_id is None:
+        raise HTTPException(status_code=403, detail="Você não pertence a nenhuma empresa")
+    
+    if periodo and datafilter:
+        raise HTTPException(status_code=400, detail="Use apenas um filtro por vez")
+
+
+    funcionario = db.query(Usuarios).filter(
+        Usuarios.empresa_id == usuario.empresa_id,
+        Usuarios.id == id
+    ).first()
+
+    if funcionario is None:
+        raise HTTPException(status_code=404, detail="Funcionário não encontrado")
+
+    if usuario.cargo == CargosEnum.funcionario and usuario.id != funcionario.id:
+        raise HTTPException(status_code=403, detail='Você só pode listar suas próprias vendas')
+
+    query = db.query(Vendas).filter(
+        Vendas.empresa_id == usuario.empresa_id,
+        Vendas.usuario_id == funcionario.id
+    )
+
+    if periodo:
+        if periodo.periodo == DFEnum.mes:
+            inicio = datetime.now(timezone.utc)
+        if periodo.periodo == DFEnum.mes:
+            inicio = inicio.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+        
+        elif periodo.periodo == DFEnum.semestre:
+            if inicio.month <= 6:
+                inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:
+                inicio = inicio.replace(month=7, day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+        
+        elif periodo.periodo == DFEnum.ano:
+            inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(
+                Vendas.created_at >= inicio
+            )
+    
+    if datafilter:
+        query = query.filter(
+            Vendas.created_at >= datafilter.data_inicial,
+            Vendas.created_at <= datafilter.data_final
+        )
+
+    return query.all()

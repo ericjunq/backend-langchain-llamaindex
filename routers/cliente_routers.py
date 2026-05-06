@@ -65,6 +65,8 @@ async def buscar_cliente(
 async def buscar_clientes_por_funcionario(
     usuario_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuarios = Depends(get_current_user)
+    usuario: Usuarios = Depends(get_current_user),
+    periodo: Optional[Periodo]=None,
+    datafilter: Optional[DataFilter]=None
 ):
     return services.cliente_service.buscar_clientes_por_funcionario(usuario_id, db, usuario)
