@@ -35,3 +35,10 @@ class VendaReponse(BaseModel):
 
 class CancelarVenda(BaseModel):
     motivo_cancelamento: str
+
+class FiltroVendas(BaseModel):
+    produto: Optional[str]=None
+    cliente_id: Optional[str]=None
+    usuario_id: Optional[str]=None
+    forma_pagamento: Optional[FormaPagamento]=None
+    status: Optional[StatusVenda]=None
