@@ -34,3 +34,6 @@ class ItemVendas(Base):
     quantidade = Column(Integer, nullable=False)
     preco_unitario = Column(Numeric(10,2), nullable=False)
     subtotal= Column(Numeric(10,2), nullable=False)
+
+    venda = relationship('Vendas', back_populates='itens_vendas')
+    produtos = relationship('Produtos',back_populates='itens_vendas')
