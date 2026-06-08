@@ -272,6 +272,3 @@ def buscar_clientes_por_funcionario(
         )
         
     return query.all()
-
-
-    return query.all()

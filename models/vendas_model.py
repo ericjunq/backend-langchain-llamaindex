@@ -24,6 +24,7 @@ class Vendas(Base):
 
     empresa = relationship("Empresa", back_populates="vendas")
     cliente = relationship("Clientes", back_populates="vendas")
+    item_venda = relationship("ItemVendas", back_populates='venda')
 
 class ItemVendas(Base):
     __tablename__= 'itens_vendas'
