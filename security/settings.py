@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     algorithm: str = 'HS256'
     # Origens liberadas no CORS (frontend Angular). No .env: CORS_ORIGINS='["http://localhost:4200"]'
     cors_origins: list[str] = ['http://localhost:4200']
+    # Fuso usado para definir o "dia" de uma venda (previsões e séries diárias).
+    fuso_horario: str = 'America/Sao_Paulo'
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / '.env',

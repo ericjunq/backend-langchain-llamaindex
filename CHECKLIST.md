@@ -19,8 +19,11 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **testes automatizados** em `tests/` (pytest): 60 testes, ~22 s, todos passando. Rodar com `python -m pytest`. O banco `gestao_teste` é criado e apagado sozinho; o `gestao` nunca é tocado. Os testes pegam regressões: reintroduzir o bug do "convite sem cargo" derruba 5 deles.
 - **2026-11-18**: rotas refeitas no **padrão REST** (ver "🗺️ Mapa de rotas"). Commits passam a ser feitos a cada alteração (`tipo: descrição`).
 - **2026-11-18**: **relatório de produtos** pronto (`/relatorios/produtos` e `/exportar`). `itens_vendas` ganhou `custo_unitario` → banco `gestao` recriado (estava vazio). 72 testes passando.
+- **2026-11-18**: **IA de previsão v1** (estatística, sem LLM): demanda por produto e sugestão de reposição. 80 testes passando.
 - **Próximos passos sugeridos:**
-  1. ~~Relatório de **produtos**~~ ✅ (giro, margem, abaixo do estoque mínimo, sem venda no período).
+  1. ~~Relatório de **produtos**~~ ✅ · ~~Previsão v1~~ ✅
+  2. **Agentes/chatbot** (LangChain): ferramentas = as rotas/services que já existem (consultar estoque, previsão, reposição, relatórios, registrar venda com confirmação).
+  3. Previsão v2 (se os dados justificarem): avaliar a v1 com backtest (erro médio por produto) antes de trocar de modelo; previsão de preço/margem. (giro, margem, abaixo do estoque mínimo, sem venda no período).
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
   4. IA de previsão → agentes/chatbot → frontend Angular.
 
@@ -34,6 +37,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 | Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
+| Previsões (dono e admin) | `GET /previsoes/produtos/{id}?dias=30` · `GET /previsoes/reposicao?prazo_entrega=7&dias_cobertura=30&apenas_necessarios=true` |
 | Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
 Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
@@ -106,4 +110,13 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - JSON enxuto (resumo + top 10 + reposição); a tabela completa por produto só no Excel, para manter a resposta leve.
   - Dono e admin acessam (é operacional); o relatório de vendas continua só do dono (tem nomes de clientes e de funcionários).
   - LGPD: o relatório de produtos não tem dado pessoal.
+- **2026-11-18**: previsão v1. Decisões:
+  - **Sem LLM e sem biblioteca pesada** (Prophet/statsmodels): pandas resolve, é rápido, explicável e testável. LangChain/LlamaIndex ficam para os agentes, onde há linguagem natural.
+  - Método: média móvel de 7 dias (tira o ciclo semanal) + média exponencial com meia-vida de 14 dias (o recente pesa mais) × fator do dia da semana (só com ≥ 28 dias de histórico). Incerteza pelo desvio-padrão diário: intervalo de ~80% e estoque de segurança de ~95%.
+  - O histórico termina **ontem** (hoje está incompleto e puxaria a previsão para baixo). Dias antes de o produto existir valem "sem dado" (NaN), não "zero venda".
+  - "Dia" no fuso da empresa (`FUSO_HORARIO`, padrão America/Sao_Paulo). O filtro do SQL usa `created_at` puro (aproveita o índice) e a conversão de fuso só no GROUP BY.
+  - **2 consultas**, qualquer que seja o nº de produtos; cálculo vetorizado (~0,1 s com 2.000 produtos, ~0,5 s com 10.000).
+  - Reposição: compra = demanda(prazo + cobertura) + segurança − estoque, nunca abaixo do mínimo; urgência `comprar_agora` / `em_breve` / `ok`; ordenada pela ruptura mais próxima.
+  - `confianca` (baixa/média/alta) por dias de histórico e volume: o frontend deve mostrar isso junto com o número.
+  - Dono e admin (envolve custo de compra). LGPD: só quantidades e datas.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
