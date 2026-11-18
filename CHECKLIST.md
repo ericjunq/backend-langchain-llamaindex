@@ -22,12 +22,11 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **IA de previsão v1** (estatística, sem LLM): demanda por produto e sugestão de reposição. 80 testes passando.
 - **2026-11-18**: Ollama 0.40.16 instalado + modelo `qwen3:8b` (5,2 GB, RTX 3050 6 GB). **Chat com 7 ferramentas de leitura** (`POST /chat`). Testado com o modelo real: ~9 s por resposta com o modelo já carregado (~19 s na primeira). 91 testes + 1 de integração (`OLLAMA_TESTE=1 python -m pytest -k integracao -s`).
 - **Próximos passos sugeridos:**
-  1. ~~Relatório de **produtos**~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat leitura~~ ✅
-  2. **Ações com confirmação no chat** (em andamento): registrar venda e repor estoque
-
-  3. Previsão v2 (se os dados justificarem): avaliar a v1 com backtest (erro médio por produto) antes de trocar de modelo; previsão de preço/margem. (giro, margem, abaixo do estoque mínimo, sem venda no período).
+  1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
+  2. **Ações com confirmação no chat** (em andamento): registrar venda e repor estoque.
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
-  4. IA de previsão → agentes/chatbot → frontend Angular.
+  4. Frontend Angular.
+  5. Previsão v2 (se os dados justificarem): backtest da v1 (erro médio por produto) antes de trocar de modelo; previsão de preço/margem.
 
 ## 🗺️ Mapa de rotas (REST)
 
