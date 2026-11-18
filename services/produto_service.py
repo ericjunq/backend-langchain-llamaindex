@@ -23,7 +23,7 @@ def _buscar_produto(id: int, db: Session, usuario: Usuarios) -> Produtos:
         raise HTTPException(status_code=404, detail='Produto não encontrado')
     return produto
 
-def cadastrar_produto(produtoschema: ProdutoSchema, db: Session, usuario: Usuarios):
+def criar_produto(produtoschema: ProdutoSchema, db: Session, usuario: Usuarios):
     exigir_cargo(usuario, *GESTORES, detail='Você não tem permissão para cadastrar produtos')
 
     nome_normalizado = normalizar_nome(produtoschema.nome)
@@ -98,23 +98,20 @@ def repor_estoque(id: int, dados: ProdutoReposicaoEstoque, db: Session, usuario:
 
     return produto
 
+def obter_produto(id: int, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    return _buscar_produto(id, db, usuario)
+
 def listar_produtos(
+    filtros: FiltrarProdutos,
     paginacao: Paginacao,
     db: Session,
     usuario: Usuarios,
     intervalo: Optional[IntervaloData] = None,
 ):
+    """GET /produtos com todos os filtros opcionais (produto não tem dado pessoal: pode ir na URL)."""
     exigir_empresa(usuario)
     query = _query_ativos(db, usuario).filter(*filtros_intervalo(Produtos.created_at, intervalo))
-    return paginacao.aplicar(query.order_by(Produtos.created_at.desc(), Produtos.id.desc())).all()
-
-def buscar_produto_por_id(id: int, db: Session, usuario: Usuarios):
-    exigir_empresa(usuario)
-    return _buscar_produto(id, db, usuario)
-
-def buscar_produto(filtros: FiltrarProdutos, paginacao: Paginacao, db: Session, usuario: Usuarios):
-    exigir_empresa(usuario)
-    query = _query_ativos(db, usuario)
 
     if filtros.nome and filtros.nome.strip():
         query = query.filter(Produtos.nome_normalizado.like(f"%{normalizar_nome(filtros.nome)}%"))
@@ -129,4 +126,4 @@ def buscar_produto(filtros: FiltrarProdutos, paginacao: Paginacao, db: Session, 
     if filtros.abaixo_estoque_min:
         query = query.filter(Produtos.quantidade <= Produtos.estoque_min)
 
-    return paginacao.aplicar(query.order_by(Produtos.nome, Produtos.id)).all()
+    return paginacao.aplicar(query.order_by(Produtos.created_at.desc(), Produtos.id.desc())).all()

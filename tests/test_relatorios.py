@@ -10,7 +10,7 @@ def _cenario(client, loja):
     criar_venda(client, h, [(loja.produto['id'], 2)], cliente_id=loja.cliente['id'], desconto='1.00')  # 51 - 1 = 50
     criar_venda(client, h, [(barato['id'], 3)])                                                         # 30
     vid = criar_venda(client, h, [(barato['id'], 5)]).json()['id']                                      # cancelada
-    client.patch(f'/vendas/cancelar_venda/{vid}', headers=h, json={'motivo_cancelamento': 'Teste'})
+    client.post(f'/vendas/{vid}/cancelar', headers=h, json={'motivo_cancelamento': 'Teste'})
     return barato
 
 
@@ -34,7 +34,7 @@ def test_rankings(client, loja):
     assert r['produtos_mais_vendidos'] == [{'produto': 'Barato', 'quantidade': 3},
                                            {'produto': loja.produto['nome'], 'quantidade': 2}]
     assert r['produtos_maior_faturamento'][0] == {'produto': loja.produto['nome'], 'valor_total': 51.0}
-    assert r['funcionarios_mais_vendas'] == [{'nome': client.get('/usuario/me', headers=loja.func.headers).json()['nome'],
+    assert r['funcionarios_mais_vendas'] == [{'nome': client.get('/usuarios/me', headers=loja.func.headers).json()['nome'],
                                               'quantidade': 2}]
     assert r['clientes_maior_faturamento'][0]['valor_total'] == 50.0
     assert barato  # usado no cenário

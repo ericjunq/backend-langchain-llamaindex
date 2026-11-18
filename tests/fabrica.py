@@ -48,12 +48,12 @@ def dados_usuario(**extra) -> dict:
 
 
 def login(client, email: str, senha: str = SENHA):
-    return client.post('/usuario/login', data={'username': email, 'password': senha})
+    return client.post('/auth/login', data={'username': email, 'password': senha})
 
 
 def nova_conta(client, **extra) -> Conta:
     dados = dados_usuario(**extra)
-    r = client.post('/usuario/cadastro', json=dados)
+    r = client.post('/usuarios', json=dados)
     assert r.status_code == 201, r.text
     r_login = login(client, dados['email'])
     assert r_login.status_code == 200, r_login.text
@@ -61,7 +61,7 @@ def nova_conta(client, **extra) -> Conta:
 
 
 def nova_empresa(client, headers) -> dict:
-    r = client.post('/empresa/criar_empresa', headers=headers, json={
+    r = client.post('/empresa', headers=headers, json={
         'nome': 'Loja Teste', 'cnpj': gerar_cnpj(),
         'email': f'loja{next(_seq)}@teste.com', 'telefone': gerar_telefone(),
     })
@@ -70,13 +70,13 @@ def nova_empresa(client, headers) -> dict:
 
 
 def gerar_convite(client, headers) -> str:
-    r = client.post('/empresa/gerar_convite', headers=headers)
+    r = client.post('/empresa/convites', headers=headers)
     assert r.status_code == 201, r.text
     return r.json()['token']
 
 
 def vincular(client, headers, token: str):
-    return client.patch('/usuario/vincular_empresa', headers=headers, json={'token': token})
+    return client.post('/convites/aceitar', headers=headers, json={'token': token})
 
 
 def novo_produto(client, headers, **campos) -> dict:
@@ -84,7 +84,7 @@ def novo_produto(client, headers, **campos) -> dict:
         'nome': f'Produto {next(_seq)}', 'descricao': 'Descrição', 'quantidade': 10,
         'preco_compra': '10.00', 'preco_venda': '25.50', 'estoque_min': 2, **campos,
     }
-    r = client.post('/produtos/cadastrar_produto', headers=headers, json=dados)
+    r = client.post('/produtos', headers=headers, json=dados)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -93,7 +93,7 @@ def novo_cliente(client, headers, **campos) -> dict:
     n = next(_seq)
     dados = {'nome': f'Cliente {n}', 'email': f'cliente{n}@teste.com',
              'cpf': gerar_cpf(), 'telefone': gerar_telefone(), **campos}
-    r = client.post('/cliente/adicionar_cliente', headers=headers, json=dados)
+    r = client.post('/clientes', headers=headers, json=dados)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -104,11 +104,11 @@ def criar_venda(client, headers, itens, **campos):
         'descricao': 'Venda teste', 'forma_pagamento': 'pix',
         'itens': [{'produto_id': p, 'quantidade': q} for p, q in itens], **campos,
     }
-    return client.post('/vendas/criar_venda', headers=headers, json=corpo)
+    return client.post('/vendas', headers=headers, json=corpo)
 
 
 def estoque(client, headers, produto_id: int) -> int:
-    return client.get(f'/produtos/buscar_produto_por_id/{produto_id}', headers=headers).json()['quantidade']
+    return client.get(f'/produtos/{produto_id}', headers=headers).json()['quantidade']
 
 
 def criar_loja(client) -> SimpleNamespace:

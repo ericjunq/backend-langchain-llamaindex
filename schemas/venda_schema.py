@@ -40,3 +40,10 @@ class VendaResponse(BaseModel):
 
 class CancelarVenda(BaseModel):
     motivo_cancelamento: str = Field(min_length=3, max_length=60)
+
+class FiltroVendas(BaseModel):
+    """Filtros de GET /vendas (query params; só ids e enums, nada pessoal)."""
+    usuario_id: Optional[int] = Field(default=None, description='Vendas de um funcionário')
+    cliente_id: Optional[int] = None
+    status: Optional[StatusVenda] = None
+    forma_pagamento: Optional[FormaPagamento] = None

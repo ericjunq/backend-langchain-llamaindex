@@ -17,10 +17,25 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-17**: todas as correções da avaliação aplicadas (bloqueantes, segurança, desempenho e LGPD). Teste de fumaça ponta a ponta com 37 cenários passando (SQLite em memória, fora do repositório).
 - **2026-11-18**: ambiente configurado. `.env` criado (Postgres local, `SECRET_KEY` aleatória). Banco `gestao` criado do zero (não existia; nenhum dado apagado), com as 8 tabelas e os índices. Teste de fumaça com 37 cenários passando **no Postgres** (banco temporário `gestao_teste`, apagado depois). API sobe sem erros (34 rotas). Subir com: `uvicorn main:app --reload` e abrir a documentação em `/docs`.
 - **2026-11-18**: **testes automatizados** em `tests/` (pytest): 60 testes, ~22 s, todos passando. Rodar com `python -m pytest`. O banco `gestao_teste` é criado e apagado sozinho; o `gestao` nunca é tocado. Os testes pegam regressões: reintroduzir o bug do "convite sem cargo" derruba 5 deles.
+- **2026-11-18**: rotas refeitas no **padrão REST** (ver "🗺️ Mapa de rotas"). Commits passam a ser feitos a cada alteração (`tipo: descrição`).
 - **Próximos passos sugeridos:**
-  1. Relatório de **produtos** (giro, margem, abaixo do estoque mínimo, sem venda no período).
+  1. Relatório de **produtos** (em andamento) (giro, margem, abaixo do estoque mínimo, sem venda no período).
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
   4. IA de previsão → agentes/chatbot → frontend Angular.
+
+## 🗺️ Mapa de rotas (REST)
+
+| Recurso | Rotas |
+|---|---|
+| Auth | `POST /auth/login` (form: username/password) · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/logout-geral` (os três com `{"refresh_token"}`) |
+| Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `POST /convites/aceitar` (`{"token"}`) |
+| Empresa (a do usuário logado) | `POST /empresa` · `GET /empresa` · `PATCH /empresa` · `GET /empresa/funcionarios` · `POST /empresa/funcionarios/busca` · `PATCH /empresa/funcionarios/{id}` (cargo) · `DELETE /empresa/funcionarios/{id}` (desvincula) · `POST /empresa/convites` |
+| Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
+| Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
+| Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
+| Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` |
+
+Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
 
 ## ✅ Feito em 2026-11-17
 
@@ -74,3 +89,11 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
   - `create_all` uma vez por execução e `TRUNCATE ... RESTART IDENTITY` entre testes (rápido).
   - `tests/fabrica.py` gera CPF, CNPJ e telefone válidos e fictícios (LGPD: nenhum dado real nos testes).
   - Organização por área: auth, empresa, produtos, clientes, vendas, **isolamento entre empresas**, relatórios e retenção.
+- **2026-11-18**: rotas no padrão REST, a pedido do usuário. Decisões:
+  - Recursos no plural, com o verbo HTTP indicando a ação. `/empresa` no singular porque cada usuário tem no máximo uma (é sempre "a minha").
+  - Listar, buscar e "por funcionário" viraram **um GET com filtros** (`?usuario_id=`). Menos rotas para o Angular manter.
+  - **Busca com dado pessoal (nome/email/CPF/telefone) via `POST …/busca`**, com os filtros no corpo: dado pessoal não vai para a URL nem para os logs (regra LGPD do CLAUDE.md). Produtos não têm dado pessoal, então os filtros ficam no GET.
+  - Ações que não são CRUD viram sub-recursos: `POST /vendas/{id}/cancelar` (venda não se edita nem se apaga: é histórico financeiro) e `POST /produtos/{id}/reposicao`.
+  - `/auth/*` reúne login e tokens. O token do convite vai no corpo, não na URL (é um segredo).
+  - Novas: `GET /empresa` e `GET /vendas/{id}`; filtros `status`, `forma_pagamento` e `cliente_id` em vendas.
+- **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

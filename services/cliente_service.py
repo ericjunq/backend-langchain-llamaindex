@@ -7,7 +7,8 @@ from schemas.cliente_schema import FiltrarCliente, ClienteCreate, ClienteUpdate
 from models.cliente_model import Clientes
 from models.usuario_model import Usuarios
 from models.vendas_model import Vendas
-from security.permissoes import exigir_empresa, exigir_cargo, GESTORES
+from security.permissoes import (exigir_empresa, exigir_cargo, exigir_membro,
+                                 exigir_proprio_se_funcionario, GESTORES)
 from utils.enums import CargosEnum
 from utils.data_filter import IntervaloData, filtros_intervalo
 from utils.paginacao import Paginacao
@@ -38,15 +39,12 @@ def _checar_conflito(db: Session, usuario: Usuarios, email=None, cpf=None, ignor
     if query.first():
         raise HTTPException(status_code=409, detail='Cliente com esse email ou CPF já cadastrado')
 
-def adicionar_cliente(clienteschema: ClienteCreate, db: Session, usuario: Usuarios):
+def criar_cliente(dados: ClienteCreate, db: Session, usuario: Usuarios):
     exigir_empresa(usuario)
-    _checar_conflito(db, usuario, email=clienteschema.email, cpf=clienteschema.cpf)
+    _checar_conflito(db, usuario, email=dados.email, cpf=dados.cpf)
 
     cliente = Clientes(
-        nome=clienteschema.nome,
-        email=clienteschema.email,
-        cpf=clienteschema.cpf,
-        telefone=clienteschema.telefone,
+        **dados.model_dump(),
         empresa_id=usuario.empresa_id,
         usuario_id=usuario.id
     )
@@ -100,58 +98,36 @@ def deletar_cliente(id: int, db: Session, usuario: Usuarios):
 
     return {"message": "Cliente possui vendas: dados pessoais anonimizados e cadastro desativado"}
 
+def obter_cliente(id: int, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    return _buscar_cliente(id, db, usuario)
+
 def listar_clientes(
     db: Session,
     usuario: Usuarios,
     paginacao: Paginacao,
     intervalo: Optional[IntervaloData] = None,
+    usuario_id: Optional[int] = None,
+    filtro: Optional[FiltrarCliente] = None,
 ):
+    """GET /clientes e POST /clientes/busca.
+    `usuario_id`: clientes cadastrados por um funcionário (funcionário só pode consultar os próprios)."""
     exigir_empresa(usuario)
     query = _query_ativos(db, usuario).filter(*filtros_intervalo(Clientes.created_at, intervalo))
-    return paginacao.aplicar(query.order_by(Clientes.created_at.desc(), Clientes.id.desc())).all()
 
-def buscar_cliente_id(id: int, db: Session, usuario: Usuarios):
-    exigir_empresa(usuario)
-    return _buscar_cliente(id, db, usuario)
+    if usuario_id is not None:
+        exigir_proprio_se_funcionario(usuario, usuario_id, 'Você só pode listar seus próprios clientes')
+        exigir_membro(db, usuario, usuario_id)
+        query = query.filter(Clientes.usuario_id == usuario_id)
 
-def buscar_cliente(filtro: FiltrarCliente, paginacao: Paginacao, db: Session, usuario: Usuarios):
-    exigir_empresa(usuario)
-    query = _query_ativos(db, usuario)
+    if filtro:
+        if filtro.nome and filtro.nome.strip():
+            query = query.filter(Clientes.nome.ilike(f"%{filtro.nome.strip()}%"))
+        if filtro.email and filtro.email.strip():
+            query = query.filter(Clientes.email.ilike(f"%{filtro.email.strip()}%"))
+        if filtro.cpf:
+            query = query.filter(Clientes.cpf == filtro.cpf)
+        if filtro.telefone:
+            query = query.filter(Clientes.telefone == filtro.telefone)
 
-    if filtro.nome and filtro.nome.strip():
-        query = query.filter(Clientes.nome.ilike(f"%{filtro.nome.strip()}%"))
-    if filtro.email and filtro.email.strip():
-        query = query.filter(Clientes.email.ilike(f"%{filtro.email.strip()}%"))
-    if filtro.cpf:
-        query = query.filter(Clientes.cpf == filtro.cpf)
-    if filtro.telefone:
-        query = query.filter(Clientes.telefone == filtro.telefone)
-
-    return paginacao.aplicar(query.order_by(Clientes.nome, Clientes.id)).all()
-
-# Dono e Admin podem listar os clientes de qualquer funcionário.
-# Funcionário só pode listar os próprios clientes.
-def buscar_clientes_por_funcionario(
-    usuario_id: int,
-    db: Session,
-    usuario: Usuarios,
-    paginacao: Paginacao,
-    intervalo: Optional[IntervaloData] = None,
-):
-    exigir_empresa(usuario)
-
-    if usuario.cargo == CargosEnum.funcionario and usuario.id != usuario_id:
-        raise HTTPException(status_code=403, detail="Você só pode listar seus próprios clientes")
-
-    funcionario = db.query(Usuarios.id).filter(
-        Usuarios.empresa_id == usuario.empresa_id,
-        Usuarios.id == usuario_id
-    ).first()
-    if funcionario is None:
-        raise HTTPException(status_code=404, detail='Funcionário não encontrado')
-
-    query = _query_ativos(db, usuario).filter(
-        Clientes.usuario_id == usuario_id,
-        *filtros_intervalo(Clientes.created_at, intervalo)
-    )
     return paginacao.aplicar(query.order_by(Clientes.created_at.desc(), Clientes.id.desc())).all()

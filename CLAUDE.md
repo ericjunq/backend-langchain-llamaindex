@@ -29,4 +29,6 @@ Python + FastAPI + SQLAlchemy 2 + Pydantic v2 + PostgreSQL. Relatórios com pand
 
 - **Plano antes de cada alteração:** antes de mexer em código, banco ou configuração, apresentar o plano de implementação (o que vai mudar, em quais arquivos, impacto em desempenho e LGPD) e só então executar.
 - Ambiente local: PostgreSQL 18 em `localhost:5432`, banco `gestao` (credenciais no `.env`, fora do git). Testes usam um banco temporário separado (`gestao_teste`), apagado ao final.
+- **Commits:** um commit a cada alteração concluída (com os testes passando), no formato `tipo: descrição` em português. Tipos: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. O CHECKLIST.md atualizado entra no mesmo commit da alteração.
+- **Rotas:** padrão REST (recursos no plural, verbo HTTP = ação). Dado pessoal nunca vai na URL: buscas por nome/email/CPF/telefone usam `POST …/busca`, com os filtros no corpo.
 - **Testes:** `python -m pytest` (em `tests/`). Toda alteração de comportamento vem com teste novo ou ajustado, e a suíte precisa passar antes de dar a tarefa por concluída.

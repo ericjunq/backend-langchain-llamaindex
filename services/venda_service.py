@@ -3,12 +3,12 @@ from decimal import Decimal
 from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, selectinload
-from schemas.venda_schema import VendaSchema, CancelarVenda
+from schemas.venda_schema import VendaSchema, CancelarVenda, FiltroVendas
 from models.cliente_model import Clientes
 from models.produto_model import Produtos
 from models.usuario_model import Usuarios
 from models.vendas_model import Vendas, ItemVendas
-from security.permissoes import exigir_empresa
+from security.permissoes import exigir_empresa, exigir_membro, exigir_proprio_se_funcionario
 from utils.enums import CargosEnum, StatusVenda
 from utils.data_filter import IntervaloData, filtros_intervalo
 from utils.paginacao import Paginacao
@@ -113,48 +113,46 @@ def cancelar_venda(id: int, cancelamento: CancelarVenda, db: Session, usuario: U
 
     return venda
 
-def _query_vendas(db: Session, usuario: Usuarios, intervalo: Optional[IntervaloData]):
+def _query_vendas(db: Session, usuario: Usuarios):
     return (
         db.query(Vendas)
         .options(selectinload(Vendas.itens))  # itens de todas as vendas em 1 consulta extra
-        .filter(Vendas.empresa_id == usuario.empresa_id, *filtros_intervalo(Vendas.created_at, intervalo))
+        .filter(Vendas.empresa_id == usuario.empresa_id)
     )
 
-# Dono e Admin veem todas as vendas da empresa; funcionário vê só as próprias.
+def obter_venda(id: int, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    venda = _query_vendas(db, usuario).filter(Vendas.id == id).first()
+    if venda is None:
+        raise HTTPException(status_code=404, detail='Venda não encontrada')
+    exigir_proprio_se_funcionario(usuario, venda.usuario_id, 'Você só pode ver suas próprias vendas')
+    return venda
+
 def listar_vendas(
+    filtro: FiltroVendas,
     db: Session,
     usuario: Usuarios,
     paginacao: Paginacao,
     intervalo: Optional[IntervaloData] = None,
 ):
+    """GET /vendas. Dono e Admin veem todas as vendas da empresa (ou de um funcionário,
+    via `usuario_id`); funcionário vê só as próprias."""
     exigir_empresa(usuario)
+    query = _query_vendas(db, usuario).filter(*filtros_intervalo(Vendas.created_at, intervalo))
 
-    query = _query_vendas(db, usuario, intervalo)
     if usuario.cargo == CargosEnum.funcionario:
+        if filtro.usuario_id is not None:
+            exigir_proprio_se_funcionario(usuario, filtro.usuario_id, 'Você só pode listar suas próprias vendas')
         query = query.filter(Vendas.usuario_id == usuario.id)
+    elif filtro.usuario_id is not None:
+        exigir_membro(db, usuario, filtro.usuario_id)
+        query = query.filter(Vendas.usuario_id == filtro.usuario_id)
 
-    return paginacao.aplicar(query.order_by(Vendas.created_at.desc(), Vendas.id.desc())).all()
+    if filtro.cliente_id is not None:
+        query = query.filter(Vendas.cliente_id == filtro.cliente_id)
+    if filtro.status is not None:
+        query = query.filter(Vendas.status == filtro.status)
+    if filtro.forma_pagamento is not None:
+        query = query.filter(Vendas.forma_pagamento == filtro.forma_pagamento)
 
-# Dono e Admin podem listar as vendas de qualquer funcionário.
-# Funcionário só pode listar as próprias vendas.
-def listar_vendas_funcionario(
-    id: int,
-    db: Session,
-    usuario: Usuarios,
-    paginacao: Paginacao,
-    intervalo: Optional[IntervaloData] = None,
-):
-    exigir_empresa(usuario)
-
-    if usuario.cargo == CargosEnum.funcionario and usuario.id != id:
-        raise HTTPException(status_code=403, detail='Você só pode listar suas próprias vendas')
-
-    funcionario = db.query(Usuarios.id).filter(
-        Usuarios.empresa_id == usuario.empresa_id,
-        Usuarios.id == id
-    ).first()
-    if funcionario is None:
-        raise HTTPException(status_code=404, detail="Funcionário não encontrado")
-
-    query = _query_vendas(db, usuario, intervalo).filter(Vendas.usuario_id == id)
     return paginacao.aplicar(query.order_by(Vendas.created_at.desc(), Vendas.id.desc())).all()

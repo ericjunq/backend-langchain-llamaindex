@@ -1,4 +1,5 @@
 import secrets
+from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -116,10 +117,16 @@ def remover_funcionario(id: int, db: Session, usuario: Usuarios):
 
     return funcionario
 
-def listar_funcionarios(filtro: FuncionarioFiltro, paginacao: Paginacao, db: Session, usuario: Usuarios):
+def obter_empresa(db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    return db.get(Empresa, usuario.empresa_id)
+
+def listar_funcionarios(filtro: Optional[FuncionarioFiltro], paginacao: Paginacao, db: Session, usuario: Usuarios):
+    """GET /empresa/funcionarios (sem filtro) e POST /empresa/funcionarios/busca (filtros no corpo)."""
     exigir_empresa(usuario)
 
     query = db.query(Usuarios).filter(Usuarios.empresa_id == usuario.empresa_id)
+    filtro = filtro or FuncionarioFiltro()
 
     if filtro.nome and filtro.nome.strip():
         query = query.filter(Usuarios.nome.ilike(f"%{filtro.nome.strip()}%"))

@@ -38,7 +38,7 @@ def test_estoque_insuficiente_nao_altera_nada(client, loja):
     # Nenhuma baixa parcial: a transação inteira foi desfeita.
     assert estoque(client, h, loja.produto['id']) == 10
     assert estoque(client, h, outro['id']) == 1
-    assert client.get('/vendas/listar_vendas', headers=loja.dono.headers).json() == []
+    assert client.get('/vendas', headers=loja.dono.headers).json() == []
 
 
 def test_cancelar_devolve_estoque(client, loja):
@@ -46,13 +46,13 @@ def test_cancelar_devolve_estoque(client, loja):
     vid = criar_venda(client, loja.func.headers, [(pid, 4)]).json()['id']
     assert estoque(client, loja.dono.headers, pid) == 6
 
-    r = client.patch(f'/vendas/cancelar_venda/{vid}', headers=loja.func.headers,
+    r = client.post(f'/vendas/{vid}/cancelar', headers=loja.func.headers,
                      json={'motivo_cancelamento': 'Cliente desistiu'})
     assert r.status_code == 200
     assert r.json()['status'] == 'cancelada' and r.json()['motivo_cancelamento'] == 'Cliente desistiu'
     assert estoque(client, loja.dono.headers, pid) == 10
 
-    again = client.patch(f'/vendas/cancelar_venda/{vid}', headers=loja.dono.headers,
+    again = client.post(f'/vendas/{vid}/cancelar', headers=loja.dono.headers,
                          json={'motivo_cancelamento': 'De novo'})
     assert again.status_code == 400
     assert estoque(client, loja.dono.headers, pid) == 10  # não devolve duas vezes
@@ -60,13 +60,13 @@ def test_cancelar_devolve_estoque(client, loja):
 
 def test_cancelar_regras(client, loja):
     corpo = {'motivo_cancelamento': 'Motivo'}
-    assert client.patch('/vendas/cancelar_venda/99999', headers=loja.dono.headers, json=corpo).status_code == 404
+    assert client.post('/vendas/99999/cancelar', headers=loja.dono.headers, json=corpo).status_code == 404
 
     colega = nova_conta(client)
     vincular(client, colega.headers, gerar_convite(client, loja.dono.headers))
     vid = criar_venda(client, loja.func.headers, [(loja.produto['id'], 1)]).json()['id']
-    assert client.patch(f'/vendas/cancelar_venda/{vid}', headers=colega.headers, json=corpo).status_code == 403
-    assert client.patch(f'/vendas/cancelar_venda/{vid}', headers=loja.dono.headers, json=corpo).status_code == 200
+    assert client.post(f'/vendas/{vid}/cancelar', headers=colega.headers, json=corpo).status_code == 403
+    assert client.post(f'/vendas/{vid}/cancelar', headers=loja.dono.headers, json=corpo).status_code == 200
 
 
 def test_funcionario_so_ve_as_proprias_vendas(client, loja):
@@ -74,12 +74,12 @@ def test_funcionario_so_ve_as_proprias_vendas(client, loja):
     criar_venda(client, loja.func.headers, [(pid, 1)])
     criar_venda(client, loja.dono.headers, [(pid, 1)])
 
-    assert len(client.get('/vendas/listar_vendas', headers=loja.dono.headers).json()) == 2
-    minhas = client.get('/vendas/listar_vendas', headers=loja.func.headers).json()
+    assert len(client.get('/vendas', headers=loja.dono.headers).json()) == 2
+    minhas = client.get('/vendas', headers=loja.func.headers).json()
     assert [v['usuario_id'] for v in minhas] == [loja.func.id]
 
-    assert client.get(f'/vendas/listar_vendas_funcionario/{loja.dono.id}', headers=loja.func.headers).status_code == 403
-    r = client.get(f'/vendas/listar_vendas_funcionario/{loja.func.id}?periodo=ano', headers=loja.dono.headers)
+    assert client.get(f'/vendas?usuario_id={loja.dono.id}', headers=loja.func.headers).status_code == 403
+    r = client.get(f'/vendas?usuario_id={loja.func.id}&periodo=ano', headers=loja.dono.headers)
     assert r.status_code == 200 and len(r.json()) == 1
 
 
@@ -87,8 +87,33 @@ def test_listagem_ordenada_e_paginada(client, loja):
     pid = loja.produto['id']
     ids = [criar_venda(client, loja.func.headers, [(pid, 1)]).json()['id'] for _ in range(3)]
     h = loja.dono.headers
-    assert [v['id'] for v in client.get('/vendas/listar_vendas', headers=h).json()] == ids[::-1]
-    assert [v['id'] for v in client.get('/vendas/listar_vendas?limite=2&offset=1', headers=h).json()] == ids[::-1][1:]
+    assert [v['id'] for v in client.get('/vendas', headers=h).json()] == ids[::-1]
+    assert [v['id'] for v in client.get('/vendas?limite=2&offset=1', headers=h).json()] == ids[::-1][1:]
     for periodo in ('mes', 'semestre', 'ano'):
-        assert len(client.get(f'/vendas/listar_vendas?periodo={periodo}', headers=h).json()) == 3
-    assert client.get('/vendas/listar_vendas?periodo=semana', headers=h).status_code == 422
+        assert len(client.get(f'/vendas?periodo={periodo}', headers=h).json()) == 3
+    assert client.get('/vendas?periodo=semana', headers=h).status_code == 422
+
+
+def test_obter_venda_por_id(client, loja, outra_loja):
+    vid = criar_venda(client, loja.func.headers, [(loja.produto['id'], 1)]).json()['id']
+    assert client.get(f'/vendas/{vid}', headers=loja.func.headers).json()['id'] == vid
+    assert client.get(f'/vendas/{vid}', headers=loja.dono.headers).status_code == 200
+    assert client.get(f'/vendas/{vid}', headers=outra_loja.dono.headers).status_code == 404
+    assert client.get('/vendas/99999', headers=loja.dono.headers).status_code == 404
+
+    colega = nova_conta(client)
+    vincular(client, colega.headers, gerar_convite(client, loja.dono.headers))
+    assert client.get(f'/vendas/{vid}', headers=colega.headers).status_code == 403
+
+
+def test_filtros_de_vendas(client, loja):
+    h, pid, cid = loja.dono.headers, loja.produto['id'], loja.cliente['id']
+    v1 = criar_venda(client, loja.func.headers, [(pid, 1)], cliente_id=cid).json()['id']
+    v2 = criar_venda(client, loja.func.headers, [(pid, 1)], forma_pagamento='dinheiro').json()['id']
+    client.post(f'/vendas/{v2}/cancelar', headers=h, json={'motivo_cancelamento': 'Teste'})
+
+    ids = lambda q: [v['id'] for v in client.get(f'/vendas?{q}', headers=h).json()]
+    assert ids(f'cliente_id={cid}') == [v1]
+    assert ids('status=cancelada') == [v2]
+    assert ids('status=concluida&forma_pagamento=pix') == [v1]
+    assert ids(f'usuario_id={loja.dono.id}') == []

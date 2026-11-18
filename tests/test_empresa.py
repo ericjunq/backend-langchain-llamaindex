@@ -5,24 +5,24 @@ from tests.fabrica import gerar_convite, nova_conta, nova_empresa, vincular
 def test_criar_empresa_torna_usuario_dono(client):
     conta = nova_conta(client)
     empresa = nova_empresa(client, conta.headers)
-    me = client.get('/usuario/me', headers=conta.headers).json()
+    me = client.get('/usuarios/me', headers=conta.headers).json()
     assert me['cargo'] == 'dono' and me['empresa_id'] == empresa['id']
 
 
 def test_nao_cria_segunda_empresa(client, loja):
-    r = client.post('/empresa/criar_empresa', headers=loja.dono.headers, json={
+    r = client.post('/empresa', headers=loja.dono.headers, json={
         'nome': 'Outra', 'cnpj': '11222333000181', 'email': 'x@teste.com', 'telefone': '1133334444'})
     assert r.status_code == 400
 
 
 def test_convite_vincula_como_funcionario(client, loja):
-    me = client.get('/usuario/me', headers=loja.func.headers).json()
+    me = client.get('/usuarios/me', headers=loja.func.headers).json()
     assert me['cargo'] == 'funcionario'
     assert me['empresa_id'] == loja.empresa['id']
 
 
 def test_so_dono_gera_convite(client, loja):
-    assert client.post('/empresa/gerar_convite', headers=loja.func.headers).status_code == 403
+    assert client.post('/empresa/convites', headers=loja.func.headers).status_code == 403
 
 
 def test_convite_usado_expirado_ou_invalido(client, loja, db):
@@ -47,9 +47,9 @@ def test_quem_ja_tem_empresa_nao_usa_convite(client, loja):
 
 
 def test_editar_cargo(client, loja):
-    url = f'/empresa/editar_cargo_funcionario/{loja.func.id}'
+    url = f'/empresa/funcionarios/{loja.func.id}'
     assert client.patch(url, headers=loja.func.headers, json={'cargo': 'admin'}).status_code == 403
-    assert client.patch(f'/empresa/editar_cargo_funcionario/{loja.dono.id}', headers=loja.dono.headers,
+    assert client.patch(f'/empresa/funcionarios/{loja.dono.id}', headers=loja.dono.headers,
                         json={'cargo': 'admin'}).status_code == 403  # não altera o próprio cargo
     r = client.patch(url, headers=loja.dono.headers, json={'cargo': 'admin'})
     assert r.status_code == 200 and r.json()['cargo'] == 'admin'
@@ -57,27 +57,40 @@ def test_editar_cargo(client, loja):
 
 
 def test_remover_funcionario_corta_acesso_na_hora(client, loja):
-    assert client.get('/produtos/listar_produtos', headers=loja.func.headers).status_code == 200
-    r = client.patch(f'/empresa/remover_funcionario/{loja.func.id}', headers=loja.dono.headers)
+    assert client.get('/produtos', headers=loja.func.headers).status_code == 200
+    r = client.delete(f'/empresa/funcionarios/{loja.func.id}', headers=loja.dono.headers)
     assert r.status_code == 200 and r.json()['empresa_id'] is None
     # O mesmo access token não acessa mais a empresa.
-    assert client.get('/produtos/listar_produtos', headers=loja.func.headers).status_code == 403
+    assert client.get('/produtos', headers=loja.func.headers).status_code == 403
 
 
 def test_dono_nao_remove_a_si_mesmo(client, loja):
-    r = client.patch(f'/empresa/remover_funcionario/{loja.dono.id}', headers=loja.dono.headers)
+    r = client.delete(f'/empresa/funcionarios/{loja.dono.id}', headers=loja.dono.headers)
     assert r.status_code == 403
 
 
 def test_editar_empresa_so_dono(client, loja):
-    assert client.patch('/empresa/editar_empresa', headers=loja.func.headers,
+    assert client.patch('/empresa', headers=loja.func.headers,
                         json={'telefone': '1144445555'}).status_code == 403
-    assert client.patch('/empresa/editar_empresa', headers=loja.dono.headers,
+    assert client.patch('/empresa', headers=loja.dono.headers,
                         json={'telefone': '1144445555'}).status_code == 200
 
 
 def test_listar_funcionarios_paginado(client, loja):
-    r = client.get('/empresa/listar_funcionarios', headers=loja.dono.headers)
+    r = client.get('/empresa/funcionarios', headers=loja.dono.headers)
     assert {u['id'] for u in r.json()} == {loja.dono.id, loja.func.id}
-    assert len(client.get('/empresa/listar_funcionarios?limite=1', headers=loja.dono.headers).json()) == 1
-    assert client.get('/empresa/listar_funcionarios?limite=500', headers=loja.dono.headers).status_code == 422
+    assert len(client.get('/empresa/funcionarios?limite=1', headers=loja.dono.headers).json()) == 1
+    assert client.get('/empresa/funcionarios?limite=500', headers=loja.dono.headers).status_code == 422
+
+
+def test_obter_empresa(client, loja):
+    for conta in (loja.dono, loja.func):
+        r = client.get('/empresa', headers=conta.headers)
+        assert r.status_code == 200 and r.json()['id'] == loja.empresa['id']
+    assert client.get('/empresa', headers=nova_conta(client).headers).status_code == 403
+
+
+def test_buscar_funcionarios_por_post(client, loja):
+    nome = client.get('/usuarios/me', headers=loja.func.headers).json()['nome']
+    r = client.post('/empresa/funcionarios/busca', headers=loja.dono.headers, json={'nome': nome})
+    assert [u['id'] for u in r.json()] == [loja.func.id]

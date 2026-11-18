@@ -6,7 +6,7 @@ def test_cadastro_normaliza_dados_e_nao_expoe_dados_pessoais(client, db):
     dados = dados_usuario(email='Fulano@Teste.COM', telefone='(11) 98888-7777')
     dados['cpf'] = f'{dados["cpf"][:3]}.{dados["cpf"][3:6]}.{dados["cpf"][6:9]}-{dados["cpf"][9:]}'
 
-    r = client.post('/usuario/cadastro', json=dados)
+    r = client.post('/usuarios', json=dados)
 
     assert r.status_code == 201
     corpo = r.json()
@@ -20,13 +20,13 @@ def test_cadastro_normaliza_dados_e_nao_expoe_dados_pessoais(client, db):
 
 def test_cadastro_duplicado_ignora_maiusculas(client):
     conta = nova_conta(client)
-    r = client.post('/usuario/cadastro', json=dados_usuario(email=conta.email.upper()))
+    r = client.post('/usuarios', json=dados_usuario(email=conta.email.upper()))
     assert r.status_code == 409
 
 
 def test_cadastro_valida_senha_e_cpf(client):
-    assert client.post('/usuario/cadastro', json=dados_usuario(senha='curta')).status_code == 422
-    assert client.post('/usuario/cadastro', json=dados_usuario(cpf='11111111111')).status_code == 422
+    assert client.post('/usuarios', json=dados_usuario(senha='curta')).status_code == 422
+    assert client.post('/usuarios', json=dados_usuario(cpf='11111111111')).status_code == 422
 
 
 def test_login_nao_revela_se_email_existe(client):
@@ -39,30 +39,30 @@ def test_login_nao_revela_se_email_existe(client):
 
 def test_rotas_protegidas_exigem_access_token_valido(client):
     conta = nova_conta(client)
-    assert client.get('/usuario/me').status_code == 401
-    assert client.get('/usuario/me', headers={'Authorization': 'Bearer lixo'}).status_code == 401
+    assert client.get('/usuarios/me').status_code == 401
+    assert client.get('/usuarios/me', headers={'Authorization': 'Bearer lixo'}).status_code == 401
     refresh_como_access = {'Authorization': f"Bearer {conta.tokens['refresh_token']}"}
-    assert client.get('/usuario/me', headers=refresh_como_access).status_code == 401
-    assert client.get('/usuario/me', headers=conta.headers).json()['id'] == conta.id
+    assert client.get('/usuarios/me', headers=refresh_como_access).status_code == 401
+    assert client.get('/usuarios/me', headers=conta.headers).json()['id'] == conta.id
 
 
 def test_refresh_rotaciona_e_detecta_reuso(client):
     conta = nova_conta(client)
     antigo = conta.tokens['refresh_token']
 
-    r = client.post('/refresh_token/refresh', json={'refresh_token': antigo})
+    r = client.post('/auth/refresh', json={'refresh_token': antigo})
     assert r.status_code == 200
     novo = r.json()['refresh_token']
     assert novo != antigo
 
     # Reusar o antigo = possível roubo: derruba todas as sessões, inclusive a nova.
-    assert client.post('/refresh_token/refresh', json={'refresh_token': antigo}).status_code == 401
-    assert client.post('/refresh_token/refresh', json={'refresh_token': novo}).status_code == 401
+    assert client.post('/auth/refresh', json={'refresh_token': antigo}).status_code == 401
+    assert client.post('/auth/refresh', json={'refresh_token': novo}).status_code == 401
 
 
 def test_refresh_rejeita_access_token(client):
     conta = nova_conta(client)
-    r = client.post('/refresh_token/refresh', json={'refresh_token': conta.tokens['access_token']})
+    r = client.post('/auth/refresh', json={'refresh_token': conta.tokens['access_token']})
     assert r.status_code == 401
 
 
@@ -70,29 +70,29 @@ def test_logout_e_logout_geral(client):
     conta = nova_conta(client)
     segunda_sessao = login(client, conta.email).json()
 
-    assert client.post('/refresh_token/logout', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 200
-    assert client.post('/refresh_token/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
+    assert client.post('/auth/logout', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 200
+    assert client.post('/auth/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
 
     terceira = login(client, conta.email).json()
-    assert client.post('/refresh_token/logout_geral', json={'refresh_token': terceira['refresh_token']}).status_code == 200
-    assert client.post('/refresh_token/refresh', json={'refresh_token': segunda_sessao['refresh_token']}).status_code == 401
+    assert client.post('/auth/logout-geral', json={'refresh_token': terceira['refresh_token']}).status_code == 200
+    assert client.post('/auth/refresh', json={'refresh_token': segunda_sessao['refresh_token']}).status_code == 401
 
 
 def test_troca_de_senha_exige_senha_atual_e_encerra_sessoes(client):
     conta = nova_conta(client)
 
-    sem_atual = client.patch('/usuario/editar_usuario', headers=conta.headers, json={'senha': 'novasenha123'})
+    sem_atual = client.patch('/usuarios/me', headers=conta.headers, json={'senha': 'novasenha123'})
     assert sem_atual.status_code == 401
 
-    ok = client.patch('/usuario/editar_usuario', headers=conta.headers,
+    ok = client.patch('/usuarios/me', headers=conta.headers,
                       json={'senha': 'novasenha123', 'senha_atual': SENHA})
     assert ok.status_code == 200
-    assert client.post('/refresh_token/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
+    assert client.post('/auth/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
     assert login(client, conta.email).status_code == 401
     assert login(client, conta.email, 'novasenha123').status_code == 200
 
 
 def test_editar_email_para_um_ja_usado(client):
     a, b = nova_conta(client), nova_conta(client)
-    r = client.patch('/usuario/editar_usuario', headers=a.headers, json={'email': b.email, 'senha_atual': SENHA})
+    r = client.patch('/usuarios/me', headers=a.headers, json={'email': b.email, 'senha_atual': SENHA})
     assert r.status_code == 409

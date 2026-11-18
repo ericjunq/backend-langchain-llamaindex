@@ -11,15 +11,30 @@ import services.produto_service as service
 
 produto_router = APIRouter(prefix='/produtos', tags=['produtos'])
 
-@produto_router.post('/cadastrar_produto', response_model=ProdutoResponse, status_code=201)
-def cadastrar_produto(
-    produtoschema: ProdutoSchema,
+@produto_router.post('', response_model=ProdutoResponse, status_code=201)
+def criar_produto(
+    dados: ProdutoSchema,
     db: Session = Depends(get_db),
     usuario: Usuarios = Depends(get_current_user)
 ):
-    return service.cadastrar_produto(produtoschema, db, usuario)
+    return service.criar_produto(dados, db, usuario)
 
-@produto_router.patch('/editar_produto/{id}', response_model=ProdutoResponse)
+# Produto não tem dado pessoal: todos os filtros podem ir na URL.
+@produto_router.get('', response_model=List[ProdutoResponse])
+def listar_produtos(
+    filtros: FiltrarProdutos = Depends(),
+    intervalo: Optional[IntervaloData] = Depends(get_intervalo_data),
+    paginacao: Paginacao = Depends(get_paginacao),
+    db: Session = Depends(get_db),
+    usuario: Usuarios = Depends(get_current_user)
+):
+    return service.listar_produtos(filtros, paginacao, db, usuario, intervalo)
+
+@produto_router.get('/{id}', response_model=ProdutoResponse)
+def obter_produto(id: int, db: Session = Depends(get_db), usuario: Usuarios = Depends(get_current_user)):
+    return service.obter_produto(id, db, usuario)
+
+@produto_router.patch('/{id}', response_model=ProdutoResponse)
 def editar_produto(
     id: int,
     dados: ProdutoUpdate,
@@ -28,15 +43,12 @@ def editar_produto(
 ):
     return service.editar_produto(id, dados, db, usuario)
 
-@produto_router.delete('/deletar_produto/{id}')
-def deletar_produto(
-    id: int,
-    db: Session = Depends(get_db),
-    usuario: Usuarios = Depends(get_current_user)
-):
+@produto_router.delete('/{id}')
+def deletar_produto(id: int, db: Session = Depends(get_db), usuario: Usuarios = Depends(get_current_user)):
     return service.deletar_produto(id, db, usuario)
 
-@produto_router.patch('/repor_estoque/{id}', response_model=ProdutoResponse)
+# Entrada de estoque (soma à quantidade atual).
+@produto_router.post('/{id}/reposicao', response_model=ProdutoResponse)
 def repor_estoque(
     id: int,
     dados: ProdutoReposicaoEstoque,
@@ -44,29 +56,3 @@ def repor_estoque(
     usuario: Usuarios = Depends(get_current_user)
 ):
     return service.repor_estoque(id, dados, db, usuario)
-
-@produto_router.get('/listar_produtos', response_model=List[ProdutoResponse])
-def listar_produtos(
-    intervalo: Optional[IntervaloData] = Depends(get_intervalo_data),
-    paginacao: Paginacao = Depends(get_paginacao),
-    db: Session = Depends(get_db),
-    usuario: Usuarios = Depends(get_current_user)
-):
-    return service.listar_produtos(paginacao, db, usuario, intervalo)
-
-@produto_router.get('/buscar_produto_por_id/{id}', response_model=ProdutoResponse)
-def buscar_produto_por_id(
-    id: int,
-    db: Session = Depends(get_db),
-    usuario: Usuarios = Depends(get_current_user)
-):
-    return service.buscar_produto_por_id(id, db, usuario)
-
-@produto_router.get('/buscar_produto', response_model=List[ProdutoResponse])
-def buscar_produto(
-    filtros: FiltrarProdutos = Depends(),
-    paginacao: Paginacao = Depends(get_paginacao),
-    db: Session = Depends(get_db),
-    usuario: Usuarios = Depends(get_current_user)
-):
-    return service.buscar_produto(filtros, paginacao, db, usuario)

@@ -6,12 +6,12 @@ from database import engine, Base, LocalSession
 from security.settings import settings
 import models  # registra todos os models no Base
 from models import RefreshToken, Convite
-from routers.usuario_routers import usuario_router
+from routers.auth_routers import auth_router
+from routers.usuario_routers import usuario_router, convite_router
 from routers.cliente_routers import cliente_router
 from routers.empresa_routers import empresa_router
 from routers.produto_routers import produto_router
 from routers.venda_routers import venda_router
-from routers.refresh_token_routers import refresh_token_router
 from routers.relatorio_routers import relatorio_router
 
 def limpar_dados_expirados() -> None:
@@ -39,10 +39,11 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+app.include_router(auth_router)
 app.include_router(usuario_router)
+app.include_router(convite_router)
 app.include_router(cliente_router)
 app.include_router(empresa_router)
 app.include_router(produto_router)
 app.include_router(venda_router)
-app.include_router(refresh_token_router)
 app.include_router(relatorio_router)
