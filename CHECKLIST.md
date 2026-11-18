@@ -18,8 +18,9 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: ambiente configurado. `.env` criado (Postgres local, `SECRET_KEY` aleatória). Banco `gestao` criado do zero (não existia; nenhum dado apagado), com as 8 tabelas e os índices. Teste de fumaça com 37 cenários passando **no Postgres** (banco temporário `gestao_teste`, apagado depois). API sobe sem erros (34 rotas). Subir com: `uvicorn main:app --reload` e abrir a documentação em `/docs`.
 - **2026-11-18**: **testes automatizados** em `tests/` (pytest): 60 testes, ~22 s, todos passando. Rodar com `python -m pytest`. O banco `gestao_teste` é criado e apagado sozinho; o `gestao` nunca é tocado. Os testes pegam regressões: reintroduzir o bug do "convite sem cargo" derruba 5 deles.
 - **2026-11-18**: rotas refeitas no **padrão REST** (ver "🗺️ Mapa de rotas"). Commits passam a ser feitos a cada alteração (`tipo: descrição`).
+- **2026-11-18**: **relatório de produtos** pronto (`/relatorios/produtos` e `/exportar`). `itens_vendas` ganhou `custo_unitario` → banco `gestao` recriado (estava vazio). 72 testes passando.
 - **Próximos passos sugeridos:**
-  1. Relatório de **produtos** (em andamento) (giro, margem, abaixo do estoque mínimo, sem venda no período).
+  1. ~~Relatório de **produtos**~~ ✅ (giro, margem, abaixo do estoque mínimo, sem venda no período).
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
   4. IA de previsão → agentes/chatbot → frontend Angular.
 
@@ -33,7 +34,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 | Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
-| Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` |
+| Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
 Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
 
@@ -64,7 +65,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [ ] Email de aviso (troca de senha/email, novo login), hoje como TODO em `usuario_service.editar_usuario`
 - [ ] Direitos do titular: exportar "meus dados", anonimizar a própria conta
 - [ ] Rate limit no login (força bruta)
-- [ ] Relatório de produtos
+- [x] Relatório de produtos
+- [ ] Margem por produto usa o faturamento **bruto** (o desconto é da venda inteira, não de cada item). Se precisar: ratear o desconto entre os itens
 - [ ] Empresa: desativar/excluir; transferência de dono
 - [ ] Busca de produto por nome usa `LIKE '%x%'` (não usa índice). Se o volume crescer: `pg_trgm`
 - [ ] Rever a decisão "sem Alembic" antes de ir para produção com dados reais
@@ -96,4 +98,12 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Ações que não são CRUD viram sub-recursos: `POST /vendas/{id}/cancelar` (venda não se edita nem se apaga: é histórico financeiro) e `POST /produtos/{id}/reposicao`.
   - `/auth/*` reúne login e tokens. O token do convite vai no corpo, não na URL (é um segredo).
   - Novas: `GET /empresa` e `GET /vendas/{id}`; filtros `status`, `forma_pagamento` e `cliente_id` em vendas.
+- **2026-11-18**: relatório de produtos, base para a IA de previsão. Decisões:
+  - `custo_unitario` gravado em cada item da venda: a margem histórica não muda quando o preço de compra do produto muda.
+  - **1 consulta** (produtos LEFT JOIN vendas agregadas por produto) e o resto em pandas. Troca: traz uma linha por produto (volume moderado) em vez de ~8 consultas.
+  - Inclui produtos desativados que venderam no período, para o faturamento bater com o relatório de vendas. O resumo de estoque conta só os ativos.
+  - Média diária = vendido ÷ dias do período (do filtro, ou da 1ª venda até agora). `dias_estoque` = estoque ÷ média: é a semente da previsão de reposição que a IA vai refinar.
+  - JSON enxuto (resumo + top 10 + reposição); a tabela completa por produto só no Excel, para manter a resposta leve.
+  - Dono e admin acessam (é operacional); o relatório de vendas continua só do dono (tem nomes de clientes e de funcionários).
+  - LGPD: o relatório de produtos não tem dado pessoal.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

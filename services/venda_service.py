@@ -65,6 +65,7 @@ def criar_venda(vendaschema: VendaSchema, db: Session, usuario: Usuarios):
             produto_id=produto.id,
             quantidade=quantidade,
             preco_unitario=produto.preco_venda,
+            custo_unitario=produto.preco_compra,
             subtotal=subtotal
         ))
         produto.quantidade -= quantidade

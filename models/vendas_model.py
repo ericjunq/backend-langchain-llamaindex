@@ -40,6 +40,8 @@ class ItemVendas(Base):
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False, index=True)
     quantidade = Column(Integer, nullable=False)
     preco_unitario = Column(Numeric(10, 2), nullable=False)
+    # Preço de compra no momento da venda: a margem continua correta se o custo do produto mudar depois.
+    custo_unitario = Column(Numeric(10, 2), nullable=False)
     subtotal = Column(Numeric(10, 2), nullable=False)
 
     venda = relationship('Vendas', back_populates='itens')
