@@ -20,9 +20,11 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: rotas refeitas no **padrão REST** (ver "🗺️ Mapa de rotas"). Commits passam a ser feitos a cada alteração (`tipo: descrição`).
 - **2026-11-18**: **relatório de produtos** pronto (`/relatorios/produtos` e `/exportar`). `itens_vendas` ganhou `custo_unitario` → banco `gestao` recriado (estava vazio). 72 testes passando.
 - **2026-11-18**: **IA de previsão v1** (estatística, sem LLM): demanda por produto e sugestão de reposição. 80 testes passando.
+- **2026-11-18**: Ollama 0.40.16 instalado + modelo `qwen3:8b` (5,2 GB, RTX 3050 6 GB). **Chat com 7 ferramentas de leitura** (`POST /chat`). Testado com o modelo real: ~9 s por resposta com o modelo já carregado (~19 s na primeira). 91 testes + 1 de integração (`OLLAMA_TESTE=1 python -m pytest -k integracao -s`).
 - **Próximos passos sugeridos:**
-  1. ~~Relatório de **produtos**~~ ✅ · ~~Previsão v1~~ ✅
-  2. **Agentes/chatbot** (LangChain): ferramentas = as rotas/services que já existem (consultar estoque, previsão, reposição, relatórios, registrar venda com confirmação).
+  1. ~~Relatório de **produtos**~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat leitura~~ ✅
+  2. **Ações com confirmação no chat** (em andamento): registrar venda e repor estoque
+
   3. Previsão v2 (se os dados justificarem): avaliar a v1 com backtest (erro médio por produto) antes de trocar de modelo; previsão de preço/margem. (giro, margem, abaixo do estoque mínimo, sem venda no período).
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
   4. IA de previsão → agentes/chatbot → frontend Angular.
@@ -38,6 +40,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
 | Previsões (dono e admin) | `GET /previsoes/produtos/{id}?dias=30` · `GET /previsoes/reposicao?prazo_entrega=7&dias_cobertura=30&apenas_necessarios=true` |
+| Assistente | `POST /chat` (`{"mensagem", "historico": [{"papel": "usuario"/"assistente", "conteudo"}]}` → `{"resposta", "ferramentas_usadas", "acoes_pendentes"}`) |
 | Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
 Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
@@ -120,4 +123,12 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - `confianca` (baixa/média/alta) por dias de histórico e volume: o frontend deve mostrar isso junto com o número.
   - Dono e admin (envolve custo de compra). LGPD: só quantidades e datas.
 - **2026-11-18**: pedido do usuário: valor de reposição **não pode parecer exato** (o preço de compra varia). O resumo da reposição passou a priorizar o **nível de necessidade** (`por_necessidade`: quantos produtos em `comprar_agora` / `em_breve` / `ok`); o campo `urgencia` virou `necessidade`; o total virou `gasto_estimado_reposicao`. Regra geral: todo valor projetado em dinheiro é rotulado como estimativa (também nas respostas do chat).
+- **2026-11-18**: assistente via chat. Decisões:
+  - **Ollama local** (escolha do usuário; "se ficar ruim, a gente troca"). Com o modelo local, nenhum dado sai da máquina. Trocar de modelo = `OLLAMA_MODELO` no `.env`.
+  - **Laço de ferramentas próprio** com `langchain-core` + `langchain-ollama` (sem LangGraph): controle de passos (máx. 5), erros e tempo; o modelo é injetado como dependência, então os testes usam um **modelo roteirizado** (`tests/modelo_falso.py`).
+  - `qwen3` com `reasoning=False` (sem modo pensamento: muito mais rápido), `temperature=0`, `keep_alive=30m`.
+  - Ferramentas chamam os services **com o usuário logado** → permissões e isolamento valem no chat. Erros (permissão, 404, argumento inválido) voltam ao modelo como `{"erro": ...}` para ele explicar.
+  - **Histórico no frontend** (o servidor não guarda conversas), no máximo 10 mensagens.
+  - **Lição do teste real:** formato "colunas + linhas" fez o qwen3:8b desalinhar valores ("comprar 1" em vez de 4). Ferramentas usam **objetos com chaves curtas**; campo sem valor (ex.: sem data de ruptura) é **omitido** para o modelo não inventar.
+  - LGPD: ferramentas nunca entregam CPF/email/telefone; cliente aparece como "Maria S."; o conteúdo das mensagens não é logado.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

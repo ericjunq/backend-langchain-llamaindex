@@ -14,6 +14,7 @@ from routers.produto_routers import produto_router
 from routers.venda_routers import venda_router
 from routers.relatorio_routers import relatorio_router
 from routers.previsao_routers import previsao_router
+from routers.chat_routers import chat_router
 
 def limpar_dados_expirados() -> None:
     """Retenção (LGPD): apaga refresh tokens e convites vencidos. 2 DELETEs usando índice em expires_at."""
@@ -49,3 +50,4 @@ app.include_router(produto_router)
 app.include_router(venda_router)
 app.include_router(relatorio_router)
 app.include_router(previsao_router)
+app.include_router(chat_router)
