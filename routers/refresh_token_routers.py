@@ -1,35 +1,21 @@
-from fastapi import Depends, HTTPException, APIRouter
+from fastapi import Depends, APIRouter
 from sqlalchemy.orm import Session
-from models.usuario_model import Usuarios
-from models.refresh_token import RefreshToken
+from schemas.usuario_schema import RefreshRequest, TokenResponse
 from security.dependencies import get_db
-from security.settings import settings
-from security.security import criptografar_senha, verificar_senha, criar_access_token, criar_refresh_token
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-from datetime import datetime, timezone
-import services.refresh_token_service
+import services.refresh_token_service as service
 
+# O refresh token vai no corpo (JSON), não no header Authorization:
+# assim ele não se confunde com o access token no Swagger nem no frontend.
 refresh_token_router = APIRouter(prefix='/refresh_token', tags=['refresh token'])
-oauth_scheme = OAuth2PasswordBearer(tokenUrl='/login')
 
-@refresh_token_router.post('/refresh')
-async def refresh(
-    token: str = Depends(oauth_scheme),
-    db: Session = Depends(get_db),
-):
-    return services.refresh_token_service.refresh(token, db)
+@refresh_token_router.post('/refresh', response_model=TokenResponse)
+def refresh(dados: RefreshRequest, db: Session = Depends(get_db)):
+    return service.refresh(dados.refresh_token, db)
 
 @refresh_token_router.post('/logout')
-async def logout(
-    token: str = Depends(oauth_scheme),
-    db: Session = Depends(get_db)
-):
-    return services.refresh_token_service.logout(token, db)
+def logout(dados: RefreshRequest, db: Session = Depends(get_db)):
+    return service.logout(dados.refresh_token, db)
 
 @refresh_token_router.post('/logout_geral')
-async def logout_geral(
-    token: str = Depends(oauth_scheme),
-    db: Session = Depends(get_db)
-):
-    return services.refresh_token_service.logout_geral(token, db)
+def logout_geral(dados: RefreshRequest, db: Session = Depends(get_db)):
+    return service.logout_geral(dados.refresh_token, db)

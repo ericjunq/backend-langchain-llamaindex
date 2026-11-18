@@ -1,25 +1,25 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field
 from typing import Optional
-from security.validations import CNPJ, Telefone
+from security.validations import CNPJ, Telefone, Email
 from datetime import datetime
 from utils.enums import CargosFuncionarios
 
 class EmpresaCreate(BaseModel):
-    nome: str
+    nome: str = Field(min_length=2, max_length=40)
     cnpj: CNPJ
-    email: EmailStr
+    email: Email
     telefone: Telefone
 
 class EmpresaResponse(BaseModel):
     id: int
     nome: str
-    cnpj: CNPJ
+    cnpj: str
     created_at: datetime
     updated_at: datetime
 
 class EmpresaUpdate(BaseModel):
-    email: Optional[EmailStr]
-    telefone: Optional[Telefone]
+    email: Optional[Email] = None
+    telefone: Optional[Telefone] = None
 
-class CargosFuncionarios(BaseModel):
+class CargoUpdate(BaseModel):
     cargo: CargosFuncionarios

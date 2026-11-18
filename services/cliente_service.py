@@ -1,274 +1,157 @@
+from typing import Optional
 from fastapi import HTTPException
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from schemas.cliente_schema import FiltrarCliente, ClienteCreate, ClienteUpdate
 from models.cliente_model import Clientes
 from models.usuario_model import Usuarios
-from utils.enums import CargosEnum, DataFilter as DFEnum
-from typing import List, Optional
-from datetime import datetime, timezone
-from schemas.filtrodata_schema import DataFilter, Periodo
-from datetime import datetime
+from models.vendas_model import Vendas
+from security.permissoes import exigir_empresa, exigir_cargo, GESTORES
+from utils.enums import CargosEnum
+from utils.data_filter import IntervaloData, filtros_intervalo
+from utils.paginacao import Paginacao
 
-# Função de adicionar cliente
-def adicionar_cliente(
-    clienteschema: ClienteCreate,
-    db: Session,
-    usuario: Usuarios
-):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence à nenhuma empresa')
+def _query_ativos(db: Session, usuario: Usuarios):
+    return db.query(Clientes).filter(
+        Clientes.empresa_id == usuario.empresa_id,
+        Clientes.status.is_(True)
+    )
 
-    email_existente = db.query(Clientes).filter(
-        Clientes.email == clienteschema.email,
-        Clientes.empresa_id == usuario.empresa_id
-    ).first()
-    if email_existente:
-        raise HTTPException(status_code=400, detail='Cliente com esse email já cadastrado')
-    
-    cpf_existente = db.query(Clientes).filter(
-        Clientes.cpf == clienteschema.cpf,
-        Clientes.empresa_id == usuario.empresa_id
-    ).first()
-    if cpf_existente:
-        raise HTTPException(status_code=400, detail='Cliente com esse CPF já cadastrado')
-    
+def _buscar_cliente(id: int, db: Session, usuario: Usuarios) -> Clientes:
+    cliente = _query_ativos(db, usuario).filter(Clientes.id == id).first()
+    if cliente is None:
+        raise HTTPException(status_code=404, detail='Cliente não encontrado')
+    return cliente
+
+def _checar_conflito(db: Session, usuario: Usuarios, email=None, cpf=None, ignorar_id=None):
+    condicoes = []
+    if email:
+        condicoes.append(Clientes.email == email)
+    if cpf:
+        condicoes.append(Clientes.cpf == cpf)
+    if not condicoes:
+        return
+    query = db.query(Clientes.id).filter(Clientes.empresa_id == usuario.empresa_id, or_(*condicoes))
+    if ignorar_id is not None:
+        query = query.filter(Clientes.id != ignorar_id)
+    if query.first():
+        raise HTTPException(status_code=409, detail='Cliente com esse email ou CPF já cadastrado')
+
+def adicionar_cliente(clienteschema: ClienteCreate, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    _checar_conflito(db, usuario, email=clienteschema.email, cpf=clienteschema.cpf)
+
     cliente = Clientes(
         nome=clienteschema.nome,
         email=clienteschema.email,
         cpf=clienteschema.cpf,
         telefone=clienteschema.telefone,
-        empresa_id= usuario.empresa_id,
+        empresa_id=usuario.empresa_id,
         usuario_id=usuario.id
     )
-
     db.add(cliente)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Cliente com esse email ou CPF já cadastrado')
     db.refresh(cliente)
 
     return cliente
 
-# Função para editar cliente
-def editar_cliente(
-    id: int,
-    dados: ClienteUpdate,
-    db: Session,
-    usuario: Usuarios
-):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
-
-    cliente = db.query(Clientes).filter(
-        Clientes.id == id,
-        Clientes.empresa_id == usuario.empresa_id
-    ).first()
+def editar_cliente(id: int, dados: ClienteUpdate, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    cliente = _buscar_cliente(id, db, usuario)
 
     if usuario.cargo == CargosEnum.funcionario and cliente.usuario_id != usuario.id:
         raise HTTPException(status_code=403, detail='Você só pode editar seus próprios clientes')
 
-    if cliente is None:
-        raise HTTPException(status_code=404, detail='Cliente não encontrado')
-    
-    dados_update = dados.model_dump(exclude_unset=True)
-
-    if 'email' in dados_update and dados_update['email']:
-        email_existente = db.query(Clientes).filter(
-            Clientes.email == dados_update['email'],
-            Clientes.empresa_id == usuario.empresa_id
-        ).first()
-        if email_existente and email_existente.id != cliente.id:
-            raise HTTPException(status_code=409, detail='Esse email já está em uso')
+    dados_update = {k: v for k, v in dados.model_dump(exclude_unset=True).items() if v is not None}
+    _checar_conflito(db, usuario, email=dados_update.get('email'), ignorar_id=cliente.id)
 
     for campo, valor in dados_update.items():
         setattr(cliente, campo, valor)
-    
+
     db.commit()
     db.refresh(cliente)
 
     return cliente
 
-# Função para deletar cliente
-def deletar_cliente(
-    id: int,
-    db: Session,
-    usuario: Usuarios
-):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
-    
-    if usuario.cargo == CargosEnum.funcionario:
-        raise HTTPException(status_code=403, detail='Você não tem permissão para deletar clientes')
-    
-    cliente = db.query(Clientes).filter(
-        Clientes.id==id,
-        Clientes.empresa_id == usuario.empresa_id
-    ).first()
-    
-    if cliente is None:
-        raise HTTPException(status_code=404, detail='Cliente não encontrado')
-    
-    db.delete(cliente)
+def deletar_cliente(id: int, db: Session, usuario: Usuarios):
+    exigir_cargo(usuario, *GESTORES, detail='Você não tem permissão para deletar clientes')
+    cliente = _buscar_cliente(id, db, usuario)
+
+    tem_vendas = db.query(Vendas.id).filter(Vendas.cliente_id == cliente.id).first() is not None
+
+    if not tem_vendas:
+        db.delete(cliente)
+        db.commit()
+        return {"message": "Cliente deletado com sucesso"}
+
+    # Com vendas, o registro precisa ficar (histórico financeiro), mas os dados
+    # pessoais perdem a finalidade: anonimiza (LGPD).
+    cliente.nome = 'Cliente anonimizado'
+    cliente.email = None
+    cliente.cpf = None
+    cliente.telefone = None
+    cliente.status = False
     db.commit()
 
-    return {"message": "Cliente deletado com sucesso"}
+    return {"message": "Cliente possui vendas: dados pessoais anonimizados e cadastro desativado"}
 
-# Função para listar clientes
 def listar_clientes(
     db: Session,
     usuario: Usuarios,
-    periodo: Optional[Periodo] = None,
-    datafilter: Optional[DataFilter]=None
+    paginacao: Paginacao,
+    intervalo: Optional[IntervaloData] = None,
 ):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
-    
-    if periodo and datafilter:
-        raise HTTPException(status_code=400, detail="Use apenas um filtro por vez")
-    
-    query = db.query(Clientes).filter(
-        Clientes.empresa_id==usuario.empresa_id
-    )
+    exigir_empresa(usuario)
+    query = _query_ativos(db, usuario).filter(*filtros_intervalo(Clientes.created_at, intervalo))
+    return paginacao.aplicar(query.order_by(Clientes.created_at.desc(), Clientes.id.desc())).all()
 
-    if periodo:
-        inicio = datetime.now(timezone.utc)
-        if periodo.periodo == DFEnum.mes:
-            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
-            query = query.filter(
-                Clientes.created_at>=inicio
-            )
-        
-        elif periodo.periodo == DFEnum.semestre:
-            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
-            if inicio.month <= 6:
-                inicio = inicio.replace(month=1)
-            else:
-                inicio = inicio.replace(month=7)
-                
-            query = query.filter(
-                    Clientes.created_at>=inicio
-                )
-                
-        
-        elif periodo.periodo == DFEnum.ano:
-            inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            query = query.filter(
-                Clientes.created_at >= inicio
-            )
+def buscar_cliente_id(id: int, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    return _buscar_cliente(id, db, usuario)
 
-    if datafilter:
-        query = query.filter(
-            Clientes.created_at >= datafilter.data_inicial,
-            Clientes.created_at <= datafilter.data_final
-        )
-        
-    return query.all()
+def buscar_cliente(filtro: FiltrarCliente, paginacao: Paginacao, db: Session, usuario: Usuarios):
+    exigir_empresa(usuario)
+    query = _query_ativos(db, usuario)
 
-# Buscar cliente por ID
-def buscar_cliente_id(
-    id: int,
-    db: Session,
-    usuario: Usuarios
-):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
-    
-    cliente = db.query(Clientes).filter(
-        Clientes.id == id,
-        Clientes.empresa_id == usuario.empresa_id
-    ).first()
-
-    if cliente is None:
-        raise HTTPException(status_code=404, detail='Cliente não encontrado')
-    
-    return cliente
-
-# Buscar cliente por nome, email, cpf, telefone
-def buscar_cliente(
-    filtro: FiltrarCliente,
-    db: Session,
-    usuario: Usuarios
-):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence a nenhuma empresa')
-    
-    query = db.query(Clientes).filter(
-        Clientes.empresa_id == usuario.empresa_id
-    )
-    if filtro.nome and filtro.nome.split():
-            query = query.filter(Clientes.nome.ilike(f"%{filtro.nome}%"))
-
+    if filtro.nome and filtro.nome.strip():
+        query = query.filter(Clientes.nome.ilike(f"%{filtro.nome.strip()}%"))
     if filtro.email and filtro.email.strip():
-            query = query.filter(Clientes.email.ilike(f"%{filtro.email}%"))
-    
-    if filtro.cpf and filtro.cpf.strip():
-        query = query.filter(
-            Clientes.cpf == filtro.cpf
-        )
-    
-    if filtro.telefone and filtro.telefone.strip():
-        query = query.filter(
-            Clientes.telefone == filtro.telefone
-        )
-    
-    return query.all()
+        query = query.filter(Clientes.email.ilike(f"%{filtro.email.strip()}%"))
+    if filtro.cpf:
+        query = query.filter(Clientes.cpf == filtro.cpf)
+    if filtro.telefone:
+        query = query.filter(Clientes.telefone == filtro.telefone)
 
-# Buscar clientes de um funcionário
-# Dono e Admin podem listar todos os clientes de qualquer funcionário
-# Funcionário só pode listar os próprios clientes
+    return paginacao.aplicar(query.order_by(Clientes.nome, Clientes.id)).all()
+
+# Dono e Admin podem listar os clientes de qualquer funcionário.
+# Funcionário só pode listar os próprios clientes.
 def buscar_clientes_por_funcionario(
     usuario_id: int,
     db: Session,
     usuario: Usuarios,
-    periodo: Optional[Periodo]=None,
-    datafilter: Optional[DataFilter]=None
+    paginacao: Paginacao,
+    intervalo: Optional[IntervaloData] = None,
 ):
-    if usuario.empresa_id is None:
-        raise HTTPException(status_code=403, detail='Você não pertence à nenhuma empresa')
-    
-    funcionario = db.query(Usuarios).filter(
+    exigir_empresa(usuario)
+
+    if usuario.cargo == CargosEnum.funcionario and usuario.id != usuario_id:
+        raise HTTPException(status_code=403, detail="Você só pode listar seus próprios clientes")
+
+    funcionario = db.query(Usuarios.id).filter(
         Usuarios.empresa_id == usuario.empresa_id,
         Usuarios.id == usuario_id
     ).first()
     if funcionario is None:
-        raise HTTPException(status_code=404, detail='Funcionario não encontrado')
-    
-    if usuario.cargo == CargosEnum.funcionario and usuario.id != funcionario.id:
-        raise HTTPException(status_code=403, detail="Você só pode listar seus próprios funcionários")
+        raise HTTPException(status_code=404, detail='Funcionário não encontrado')
 
-    query = db.query(Clientes).filter(
-        Clientes.empresa_id==usuario.empresa_id,
-        Clientes.usuario_id == funcionario.id
+    query = _query_ativos(db, usuario).filter(
+        Clientes.usuario_id == usuario_id,
+        *filtros_intervalo(Clientes.created_at, intervalo)
     )
-
-    if periodo:
-        inicio = datetime.now(timezone.utc)
-        if periodo.periodo == DFEnum.mes:
-            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
-            query = query.filter(
-                Clientes.created_at>=inicio
-            )
-        
-        elif periodo.periodo == DFEnum.semestre:
-            inicio = inicio.replace(day=1, hour=0,minute=0,second=0,microsecond=0)
-            if inicio.month <= 6:
-                inicio = inicio.replace(month=1)
-            else:
-                inicio = inicio.replace(month=7)
-                
-            query = query.filter(
-                    Clientes.created_at>=inicio
-                )
-                
-        
-        elif periodo.periodo == DFEnum.ano:
-            inicio = inicio.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            query = query.filter(
-                Clientes.created_at >= inicio
-            )
-
-    if datafilter:
-        query = query.filter(
-            Clientes.created_at >= datafilter.data_inicial,
-            Clientes.created_at <= datafilter.data_final
-        )
-        
-    return query.all()
+    return paginacao.aplicar(query.order_by(Clientes.created_at.desc(), Clientes.id.desc())).all()

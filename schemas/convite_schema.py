@@ -7,7 +7,6 @@ class UsarConvite(BaseModel):
 
 class ConviteResponse(BaseModel):
     token: str
-    usuario_id: int
     empresa_id: int
     created_at: datetime
     expires_at: datetime

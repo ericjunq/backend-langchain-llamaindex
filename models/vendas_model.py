@@ -1,7 +1,7 @@
-from sqlalchemy import Column, func, ForeignKey, String, Boolean, DateTime, Integer, Float, Numeric
+from sqlalchemy import Column, Index, func, ForeignKey, String, DateTime, Integer, Numeric
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
 from database import Base
-from sqlalchemy import Enum as SAEnum
 from utils.enums import StatusVenda, FormaPagamento
 
 
@@ -10,11 +10,11 @@ class Vendas(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     descricao = Column(String, nullable=False)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"))
-    usuario_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False)
-    valor_total = Column(Numeric(10,2), nullable=False)
-    desconto = Column(Numeric(10,2), default=0, nullable=True)
-    valor_final = Column(Numeric(10,2),nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
+    usuario_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False, index=True)
+    valor_total = Column(Numeric(10, 2), nullable=False)
+    desconto = Column(Numeric(10, 2), default=0, nullable=False)
+    valor_final = Column(Numeric(10, 2), nullable=False)
     forma_pagamento = Column(SAEnum(FormaPagamento), nullable=False)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False)
     status = Column(SAEnum(StatusVenda), nullable=False, default=StatusVenda.concluida)
@@ -24,17 +24,23 @@ class Vendas(Base):
 
     empresa = relationship("Empresa", back_populates="vendas")
     cliente = relationship("Clientes", back_populates="vendas")
-    item_venda = relationship("ItemVendas", back_populates='venda')
+    usuario = relationship("Usuarios", back_populates="vendas")
+    itens = relationship("ItemVendas", back_populates='venda', cascade='all, delete-orphan')
+
+    __table_args__ = (
+        # Listagens e relatórios filtram por empresa + data: índice composto cobre os dois.
+        Index('ix_vendas_empresa_created', 'empresa_id', 'created_at'),
+    )
 
 class ItemVendas(Base):
-    __tablename__= 'itens_vendas'
+    __tablename__ = 'itens_vendas'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    venda_id = Column(Integer, ForeignKey('vendas.id'), nullable=False)
-    produto_id = Column(Integer, ForeignKey("produtos.id"))
+    venda_id = Column(Integer, ForeignKey('vendas.id'), nullable=False, index=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False, index=True)
     quantidade = Column(Integer, nullable=False)
-    preco_unitario = Column(Numeric(10,2), nullable=False)
-    subtotal= Column(Numeric(10,2), nullable=False)
+    preco_unitario = Column(Numeric(10, 2), nullable=False)
+    subtotal = Column(Numeric(10, 2), nullable=False)
 
-    venda = relationship('Vendas', back_populates='itens_vendas')
-    produtos = relationship('Produtos',back_populates='itens_vendas')
+    venda = relationship('Vendas', back_populates='itens')
+    produto = relationship('Produtos', back_populates='itens_vendas')

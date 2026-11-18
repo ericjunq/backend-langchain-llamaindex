@@ -3,178 +3,81 @@ from sqlalchemy.orm import Session
 from models.usuario_model import Usuarios
 from models.refresh_token import RefreshToken
 from security.settings import settings
-from security.security import criptografar_senha, verificar_senha, criar_access_token, criar_refresh_token
+from security.security import hash_token, token_confere, criar_access_token, criar_refresh_token
 from jose import jwt, JWTError
-from datetime import datetime, timezone
 
-def refresh(
-    token: str,
-    db: Session,
-):
-    try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            [settings.algorithm]
-        )
+TOKEN_INVALIDO = HTTPException(status_code=401, detail='Token inválido')
 
-        if payload.get('token_type') != 'refresh':
-            raise HTTPException(status_code=401, detail='Token inválido')
+def emitir_tokens(usuario_id: int, db: Session) -> dict:
+    """Gera access + refresh token, guarda o hash do refresh e faz o commit."""
+    sub = {'sub': str(usuario_id)}  # o JWT exige 'sub' como string
+    access_token = criar_access_token(data=sub)
+    refresh_token, jti, expires = criar_refresh_token(data=sub)
 
-        user_id = payload.get('sub')
-        if user_id is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        usuario = db.query(Usuarios).filter(
-            Usuarios.id == user_id
-        ).first()
-        if usuario is None:
-            raise HTTPException(status_code=404, detail='Usuário não encontrado')
-        
-        if payload.get('jti') is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-    
-        token_db = db.query(RefreshToken).filter(
-            RefreshToken.jti == payload.get('jti')
-        ).first()
-        if token_db is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        # Reuse Detection
-        if token_db.revoked:
-            db.query(RefreshToken).filter(
-                RefreshToken.usuario_id == user_id,
-                RefreshToken.revoked.is_(False)
-            ).update({'revoked': True}, synchronize_session=False)
-
-            db.commit()
-
-            raise HTTPException(status_code=401, detail='Sessão comprometida, faça o login novamente')
-
-        if not verificar_senha(token, token_db.token_hash):
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        agora = datetime.now(timezone.utc)
-        if payload.get('exp') <= agora.timestamp():
-            raise HTTPException(status_code=400, detail='Token expirado')
-    
-        if token_db.expires_at <= agora:
-            raise HTTPException(status_code=400, detail='Token expirado')
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail='Token inválido')
-    
-    token_db.revoked = True
-    db.commit()
-    
-    novo_access_token = criar_access_token(
-        data={'sub': user_id}
-    )
-
-    novo_refresh_token, novo_jti, expires = criar_refresh_token(
-        data={'sub': user_id}
-    )
-
-    refresh_token = RefreshToken(
-        jti=novo_jti,
-        token_hash=criptografar_senha(novo_refresh_token),
-        usuario_id = user_id,
+    db.add(RefreshToken(
+        jti=jti,
+        token_hash=hash_token(refresh_token),
+        usuario_id=usuario_id,
         expires_at=expires
-    )
-
-    db.add(refresh_token)
+    ))
     db.commit()
-    db.refresh(refresh_token)
-    db.refresh(token_db)
 
-    
     return {
-        'access_token':novo_access_token,
-        'refresh_token':novo_refresh_token,
-        'token_type':'bearer'
+        'access_token': access_token,
+        'refresh_token': refresh_token,
+        'token_type': 'bearer'
     }
 
-def logout(
-    token: str,
-    db: Session
-):
+def revogar_todos(usuario_id: int, db: Session) -> None:
+    """Revoga todas as sessões ativas do usuário (sem commit)."""
+    db.query(RefreshToken).filter(
+        RefreshToken.usuario_id == usuario_id,
+        RefreshToken.revoked.is_(False)
+    ).update({'revoked': True}, synchronize_session=False)
+
+def _validar_refresh(token: str, db: Session) -> RefreshToken:
+    # jwt.decode já valida assinatura e expiração.
     try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            [settings.algorithm]
-        )
-
-        if payload.get('token_type') != 'refresh':
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-        jti = payload.get('jti')
-        if jti is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        token_db = db.query(RefreshToken).filter(
-            RefreshToken.jti == jti
-        ).first()
-
-        if token_db is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-        if token_db.revoked == False:
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-
-        if not verificar_senha(token, token_db.token_hash):
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-        token_db.revoked = True
-        db.commit()
-
+        payload = jwt.decode(token, settings.secret_key, [settings.algorithm])
     except JWTError:
-        raise HTTPException(status_code=401, detail='Token inválido')
-    
+        raise TOKEN_INVALIDO
+
+    if payload.get('token_type') != 'refresh' or not payload.get('sub') or not payload.get('jti'):
+        raise TOKEN_INVALIDO
+
+    token_db = db.query(RefreshToken).filter(RefreshToken.jti == payload['jti']).first()
+    if token_db is None or not token_confere(token, token_db.token_hash):
+        raise TOKEN_INVALIDO
+
+    return token_db
+
+def refresh(token: str, db: Session) -> dict:
+    token_db = _validar_refresh(token, db)
+
+    # Detecção de reuso: um refresh já usado voltou → possível roubo. Derruba todas as sessões.
+    if token_db.revoked:
+        revogar_todos(token_db.usuario_id, db)
+        db.commit()
+        raise HTTPException(status_code=401, detail='Sessão comprometida, faça o login novamente')
+
+    usuario = db.get(Usuarios, token_db.usuario_id)
+    if usuario is None or not usuario.status:
+        raise TOKEN_INVALIDO
+
+    token_db.revoked = True
+    return emitir_tokens(usuario.id, db)  # um único commit: revogação + novo token
+
+def logout(token: str, db: Session) -> dict:
+    token_db = _validar_refresh(token, db)
+    token_db.revoked = True
+    db.commit()
     return {'message': 'Logout realizado com sucesso'}
 
-def logout_geral(
-    token: str,
-    db: Session
-):
-    try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            [settings.algorithm]
-        )
+def logout_geral(token: str, db: Session) -> dict:
+    token_db = _validar_refresh(token, db)
+    if token_db.revoked:
+        raise TOKEN_INVALIDO
 
-        if payload.get('token_type') != 'refresh':
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-        user_id = payload.get('sub')
-        if user_id is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        if payload.get('jti') is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        token_db = db.query(RefreshToken).filter(
-            RefreshToken.jti == payload.get('jti')
-        ).first()
-        if token_db is None:
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        if token_db.revoked:
-            raise HTTPException(status_code=401, detail='Token inválido')
-
-        if not verificar_senha(token, token_db.token_hash):
-            raise HTTPException(status_code=401, detail='Token inválido')
-        
-        db.query(RefreshToken).filter(
-            RefreshToken.usuario_id == user_id,
-            RefreshToken.revoked.is_(False)
-        ).update({'revoked': True})
-        
-        db.commit()
-    
-    except JWTError:
-        raise HTTPException(status_code=401,detail='Token inválido')
-    
-    return {'message': 'Todas as sessões foram deslogadas'}
+    revogar_todos(token_db.usuario_id, db)
+    db.commit()
+    return {'message': 'Todas as sessões foram encerradas'}

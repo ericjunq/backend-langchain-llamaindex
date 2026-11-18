@@ -9,7 +9,7 @@ class CargosFuncionarios(str, Enum):
     admin = 'admin'
     funcionario = 'funcionario'
 
-class DataFilter(str, Enum):
+class PeriodoEnum(str, Enum):
     mes = "mes"
     semestre = "semestre"
     ano = "ano"
@@ -23,3 +23,4 @@ class FormaPagamento(str, Enum):
     cartao_credito = 'cartao_credito'
     cartao_debito = 'cartao_debito'
     boleto = 'boleto'
+    dinheiro = 'dinheiro'
