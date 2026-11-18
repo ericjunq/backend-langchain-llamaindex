@@ -196,21 +196,32 @@ def prever_produto(db: Session, usuario: Usuarios, produto_id: int, dias: int) -
     }
 
 
-ORDEM_URGENCIA = {'comprar_agora': 0, 'em_breve': 1, 'ok': 2}
+NIVEIS_NECESSIDADE = ('comprar_agora', 'em_breve', 'ok')
+ORDEM_NECESSIDADE = {nivel: i for i, nivel in enumerate(NIVEIS_NECESSIDADE)}
+
+
+def _resumo_reposicao(produtos_analisados: int, por_necessidade: dict, itens: list) -> dict:
+    return {
+        'produtos_analisados': produtos_analisados,
+        # Quantos produtos estão em cada nível (contando todos os analisados, não só os listados).
+        'por_necessidade': por_necessidade,
+        # Estimativa com o preço de compra ATUAL: o valor real depende do preço na hora da compra.
+        'gasto_estimado_reposicao': _arredondar(sum(i['custo_estimado'] for i in itens)),
+    }
 
 
 def sugerir_reposicao(
     db: Session, usuario: Usuarios, prazo_entrega: int, dias_cobertura: int, apenas_necessarios: bool,
 ) -> dict:
     """Quanto comprar de cada produto para chegar ao fim de `prazo_entrega + dias_cobertura` dias
-    sem faltar, com estoque de segurança de ~95% e respeitando o estoque mínimo."""
+    sem faltar, com estoque de segurança de ~95% e respeitando o estoque mínimo.
+    Os valores em dinheiro são ESTIMATIVAS (preço de compra atual)."""
     exigir_cargo(usuario, *GESTORES)
     produtos = _produtos(db, usuario)
     parametros = {'prazo_entrega': prazo_entrega, 'dias_cobertura': dias_cobertura, 'metodo': METODO}
+    por_necessidade = dict.fromkeys(NIVEIS_NECESSIDADE, 0)
     if produtos.empty:
-        return {'parametros': parametros,
-                'resumo': {'produtos_analisados': 0, 'comprar_agora': 0, 'custo_total_estimado': 0.0},
-                'itens': []}
+        return {'parametros': parametros, 'resumo': _resumo_reposicao(0, por_necessidade, []), 'itens': []}
 
     hoje = hoje_local()
     horizonte = prazo_entrega + dias_cobertura
@@ -230,11 +241,12 @@ def sugerir_reposicao(
         ruptura = _data_ruptura(previsao[pid], estoque)
 
         if estoque <= ponto_pedido[pid] or estoque <= estoque_min:
-            urgencia = 'comprar_agora'
+            necessidade = 'comprar_agora'
         elif ruptura and (ruptura - hoje).days <= prazo_entrega + 7:
-            urgencia = 'em_breve'
+            necessidade = 'em_breve'
         else:
-            urgencia = 'ok'
+            necessidade = 'ok'
+        por_necessidade[necessidade] += 1
 
         if apenas_necessarios and sugerido == 0:
             continue
@@ -252,18 +264,10 @@ def sugerir_reposicao(
             'quantidade_sugerida': int(sugerido),
             'custo_estimado': _arredondar(sugerido * p['preco_compra']),
             'data_ruptura_estimada': ruptura,
-            'urgencia': urgencia,
+            'necessidade': necessidade,
             'confianca': _confianca(dias_hist, float(r['total_hist'][pid])),
         })
 
-    itens.sort(key=lambda i: (ORDEM_URGENCIA[i['urgencia']], i['data_ruptura_estimada'] or date.max, i['produto']))
+    itens.sort(key=lambda i: (ORDEM_NECESSIDADE[i['necessidade']], i['data_ruptura_estimada'] or date.max, i['produto']))
 
-    return {
-        'parametros': parametros,
-        'resumo': {
-            'produtos_analisados': len(produtos),
-            'comprar_agora': sum(1 for i in itens if i['urgencia'] == 'comprar_agora'),
-            'custo_total_estimado': _arredondar(sum(i['custo_estimado'] for i in itens)),
-        },
-        'itens': itens,
-    }
+    return {'parametros': parametros, 'resumo': _resumo_reposicao(len(produtos), por_necessidade, itens), 'itens': itens}

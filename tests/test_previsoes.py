@@ -111,10 +111,14 @@ def test_reposicao(client, loja, semear):
     assert principal['ponto_de_pedido'] == 14.0                   # 2/dia × 7 dias de prazo
     assert principal['quantidade_sugerida'] == 64                 # 74 − 10 em estoque
     assert principal['custo_estimado'] == 640.0
-    assert principal['urgencia'] == 'comprar_agora'
+    assert principal['necessidade'] == 'comprar_agora'
     assert itens[abaixo_min['id']]['quantidade_sugerida'] == 3     # só completa o mínimo (sem demanda)
     assert corpo['itens'][0]['produto_id'] == pid                  # ruptura mais próxima primeiro
-    assert corpo['resumo'] == {'produtos_analisados': 3, 'comprar_agora': 2, 'custo_total_estimado': 649.0}
+    assert corpo['resumo'] == {
+        'produtos_analisados': 3,
+        'por_necessidade': {'comprar_agora': 2, 'em_breve': 0, 'ok': 1},  # conta também o que não precisa comprar
+        'gasto_estimado_reposicao': 649.0,
+    }
 
     todos = client.get('/previsoes/reposicao?apenas_necessarios=false', headers=d).json()
     assert len(todos['itens']) == 3

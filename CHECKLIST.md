@@ -119,4 +119,5 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Reposição: compra = demanda(prazo + cobertura) + segurança − estoque, nunca abaixo do mínimo; urgência `comprar_agora` / `em_breve` / `ok`; ordenada pela ruptura mais próxima.
   - `confianca` (baixa/média/alta) por dias de histórico e volume: o frontend deve mostrar isso junto com o número.
   - Dono e admin (envolve custo de compra). LGPD: só quantidades e datas.
+- **2026-11-18**: pedido do usuário: valor de reposição **não pode parecer exato** (o preço de compra varia). O resumo da reposição passou a priorizar o **nível de necessidade** (`por_necessidade`: quantos produtos em `comprar_agora` / `em_breve` / `ok`); o campo `urgencia` virou `necessidade`; o total virou `gasto_estimado_reposicao`. Regra geral: todo valor projetado em dinheiro é rotulado como estimativa (também nas respostas do chat).
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
