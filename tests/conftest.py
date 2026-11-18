@@ -1,0 +1,78 @@
+"""Infraestrutura dos testes.
+
+Os testes rodam num banco Postgres SEPARADO (mesmo servidor do .env, com o nome
+trocado para `<banco>_teste`, ou o que estiver em TEST_DATABASE_URL). O banco é
+criado no início e apagado no fim. O banco de desenvolvimento nunca é tocado.
+"""
+import os
+import pytest
+import psycopg
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+
+# --- Aponta a aplicação para o banco de teste ANTES de importar database/main ---
+from security.settings import settings
+
+_url = make_url(os.environ.get('TEST_DATABASE_URL') or settings.database_url)
+if not (_url.database or '').endswith('_teste'):
+    _url = _url.set(database=f'{_url.database}_teste')
+assert _url.database.endswith('_teste'), 'Proteção: os testes só rodam em banco terminado em _teste'
+settings.database_url = _url.render_as_string(hide_password=False)
+
+def _admin_conn():
+    """Conexão no banco 'postgres' do mesmo servidor, para criar/apagar o banco de teste."""
+    return psycopg.connect(
+        host=_url.host or 'localhost', port=_url.port or 5432,
+        user=_url.username, password=_url.password,
+        dbname='postgres', autocommit=True,
+    )
+
+with _admin_conn() as _c:
+    _c.execute(f'DROP DATABASE IF EXISTS "{_url.database}" WITH (FORCE)')
+    _c.execute(f'CREATE DATABASE "{_url.database}"')
+
+import database  # noqa: E402  (precisa vir depois do ajuste da URL)
+import main  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+TABELAS = ', '.join(t.name for t in database.Base.metadata.sorted_tables)
+
+
+@pytest.fixture(scope='session')
+def client():
+    # O lifespan do app roda create_all no banco de teste.
+    with TestClient(main.app) as c:
+        yield c
+    database.engine.dispose()
+    with _admin_conn() as c:
+        c.execute(f'DROP DATABASE IF EXISTS "{_url.database}" WITH (FORCE)')
+
+
+@pytest.fixture(autouse=True)
+def banco_limpo(client):
+    """Cada teste começa com as tabelas vazias. TRUNCATE é bem mais rápido que recriar."""
+    yield
+    with database.engine.begin() as conn:
+        conn.execute(text(f'TRUNCATE {TABELAS} RESTART IDENTITY CASCADE'))
+
+
+@pytest.fixture
+def db():
+    """Sessão direta no banco, para preparar cenários ou conferir o que foi gravado."""
+    sessao = database.LocalSession()
+    try:
+        yield sessao
+    finally:
+        sessao.close()
+
+
+@pytest.fixture
+def loja(client):
+    from tests.fabrica import criar_loja
+    return criar_loja(client)
+
+
+@pytest.fixture
+def outra_loja(client):
+    from tests.fabrica import criar_loja
+    return criar_loja(client)
