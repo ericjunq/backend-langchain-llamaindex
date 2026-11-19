@@ -54,6 +54,45 @@ def _intervalo(periodo: Optional[str]) -> Optional[IntervaloData]:
 
 Periodo = Optional[Literal['mes', 'semestre', 'ano']]
 
+# --- Produto e cliente por NOME (não por id) ---
+# No teste real, o qwen3:8b inventou um id em vez de buscar antes. As ferramentas recebem o nome
+# como o usuário falou e resolvem aqui; se for ambíguo, devolvem as opções para o modelo perguntar.
+
+def resolver_produto(db: Session, usuario: Usuarios, referencia: str):
+    from utils.normalizar_nome import normalizar_nome
+    ref = (referencia or '').strip()
+    if not ref:
+        raise HTTPException(status_code=400, detail='Informe o nome do produto')
+
+    if ref.upper().startswith('PROD-'):
+        candidatos = produto_service.listar_produtos(FiltrarProdutos(codigo_produto=ref), Paginacao(2, 0), db, usuario)
+    else:
+        candidatos = produto_service.listar_produtos(FiltrarProdutos(nome=ref), Paginacao(LIMITE, 0), db, usuario)
+        exatos = [p for p in candidatos if p.nome_normalizado == normalizar_nome(ref)]
+        if len(exatos) == 1:
+            return exatos[0]
+
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if not candidatos:
+        raise HTTPException(status_code=404, detail=f'Produto "{ref}" não encontrado')
+    raise HTTPException(status_code=409, detail=f'Mais de um produto corresponde a "{ref}": '
+                        f'{", ".join(p.nome for p in candidatos)}. Pergunte ao usuário qual.')
+
+
+def resolver_cliente(db: Session, usuario: Usuarios, referencia: str):
+    ref = (referencia or '').strip()
+    candidatos = cliente_service.listar_clientes(db, usuario, Paginacao(LIMITE, 0), filtro=FiltrarCliente(nome=ref))
+    exatos = [c for c in candidatos if c.nome.strip().lower() == ref.lower()]
+    if len(exatos) == 1:
+        return exatos[0]
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if not candidatos:
+        raise HTTPException(status_code=404, detail=f'Cliente "{ref}" não encontrado')
+    raise HTTPException(status_code=409, detail=f'Mais de um cliente corresponde a "{ref}": '
+                        f'{", ".join(nome_curto(c.nome) for c in candidatos)}. Pergunte ao usuário qual.')
+
 # --- Argumentos (o schema vira a descrição que o modelo recebe) ---
 
 class ArgsBuscarProdutos(BaseModel):
@@ -61,7 +100,7 @@ class ArgsBuscarProdutos(BaseModel):
     abaixo_estoque_min: bool = Field(False, description='Só produtos com estoque igual ou abaixo do mínimo')
 
 class ArgsPrever(BaseModel):
-    produto_id: int = Field(description='Id do produto (use buscar_produtos para descobrir)')
+    produto: str = Field(description='Nome (ou código PROD-...) do produto, como o usuário falou')
     dias: int = Field(30, ge=1, le=180, description='Horizonte da previsão em dias')
 
 class ArgsReposicao(BaseModel):
@@ -85,12 +124,12 @@ def criar_ferramentas_leitura(db: Session, usuario: Usuarios) -> list[Structured
             FiltrarProdutos(nome=nome, abaixo_estoque_min=abaixo_estoque_min),
             Paginacao(LIMITE, 0), db, usuario)
         return compactar([
-            {'id': p.id, 'produto': p.nome, 'estoque': p.quantidade, 'estoque_min': p.estoque_min,
+            {'produto': p.nome, 'codigo': p.codigo_produto, 'estoque': p.quantidade, 'estoque_min': p.estoque_min,
              'preco_venda': float(p.preco_venda)}
             for p in produtos])
 
-    def prever_demanda(produto_id: int, dias: int = 30) -> str:
-        p = previsao_service.prever_produto(db, usuario, produto_id, dias)
+    def prever_demanda(produto: str, dias: int = 30) -> str:
+        p = previsao_service.prever_produto(db, usuario, resolver_produto(db, usuario, produto).id, dias)
         return compactar({
             'produto': p['produto'], 'estoque': p['estoque_atual'], 'dias': dias,
             'demanda_prevista': p['demanda_prevista'], 'faixa_80': list(p['intervalo_80'].values()),
@@ -144,14 +183,14 @@ def criar_ferramentas_leitura(db: Session, usuario: Usuarios) -> list[Structured
 
     def buscar_clientes(nome: str) -> str:
         clientes = cliente_service.listar_clientes(db, usuario, Paginacao(LIMITE, 0), filtro=FiltrarCliente(nome=nome))
-        return compactar([{'id': c.id, 'cliente': nome_curto(c.nome)} for c in clientes])
+        return compactar([nome_curto(c.nome) for c in clientes])
 
     def ferramenta(func, args, descricao):
         return StructuredTool.from_function(func=func, name=func.__name__, description=descricao, args_schema=args)
 
     return [
         ferramenta(buscar_produtos, ArgsBuscarProdutos,
-                   'Busca produtos ativos por nome e/ou os que estão abaixo do estoque mínimo. Devolve id, estoque e preço.'),
+                   'Busca produtos ativos por nome e/ou os que estão abaixo do estoque mínimo. Devolve estoque e preço.'),
         ferramenta(prever_demanda, ArgsPrever,
                    'Previsão de demanda de UM produto: quantidade prevista, faixa provável, quando o estoque acaba e confiança.'),
         ferramenta(sugerir_reposicao, ArgsReposicao,
@@ -162,7 +201,7 @@ def criar_ferramentas_leitura(db: Session, usuario: Usuarios) -> list[Structured
         ferramenta(resumo_produtos, ArgsPeriodo,
                    'Resumo do estoque: valor em estoque, margem, produtos abaixo do mínimo e sem venda.'),
         ferramenta(ultimas_vendas, ArgsUltimasVendas, 'Últimas vendas registradas (as mais recentes primeiro).'),
-        ferramenta(buscar_clientes, ArgsBuscarClientes, 'Busca clientes pelo nome. Devolve id e nome abreviado.'),
+        ferramenta(buscar_clientes, ArgsBuscarClientes, 'Busca clientes pelo nome. Devolve os nomes abreviados.'),
     ]
 
 
@@ -174,3 +213,90 @@ def executar_ferramenta(ferramenta: StructuredTool, argumentos: dict) -> str:
         return compactar({'erro': e.detail})
     except Exception as e:  # argumentos inválidos gerados pelo modelo, etc.
         return compactar({'erro': f'Não foi possível executar {ferramenta.name}: {type(e).__name__}'})
+
+
+# ============================ Ferramentas de escrita ============================
+# Não executam nada: validam, montam um resumo legível e criam uma AÇÃO PENDENTE.
+# Quem executa é a rota POST /chat/acoes/{id}/confirmar, depois do "sim" do usuário.
+
+class ArgsItemVenda(BaseModel):
+    produto: str = Field(description='Nome (ou código PROD-...) do produto, como o usuário falou')
+    quantidade: int = Field(gt=0)
+
+class ArgsRegistrarVenda(BaseModel):
+    itens: list[ArgsItemVenda] = Field(min_length=1)
+    forma_pagamento: Literal['pix', 'cartao_credito', 'cartao_debito', 'boleto', 'dinheiro']
+    cliente: Optional[str] = Field(None, description='Nome do cliente, se o usuário informou; vazio = sem cliente')
+    desconto: float = Field(0, ge=0, description='Desconto em reais sobre o total')
+
+class ArgsReporEstoque(BaseModel):
+    produto: str = Field(description='Nome (ou código PROD-...) do produto, como o usuário falou')
+    quantidade: int = Field(gt=0, description='Unidades que chegaram (somam ao estoque)')
+
+
+def _reais(valor) -> str:
+    return f'R$ {float(valor):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def criar_ferramentas_escrita(db: Session, usuario: Usuarios, pendentes: list) -> list[StructuredTool]:
+    from decimal import Decimal
+    import services.acao_service as acao_service
+    from schemas.venda_schema import VendaSchema
+    from security.permissoes import GESTORES, exigir_cargo
+
+    def _pendente(tipo: str, dados: dict, resumo: str) -> str:
+        acao = acao_service.criar(db, usuario, tipo, dados, resumo)
+        pendentes.append(acao)
+        return compactar({'acao_pendente': acao.id, 'resumo': resumo,
+                          'situacao': 'NÃO executado: o usuário precisa clicar em Confirmar'})
+
+    def registrar_venda(itens: list, forma_pagamento: str, cliente: Optional[str] = None, desconto: float = 0) -> str:
+        itens = [i if isinstance(i, dict) else i.model_dump() for i in itens]
+        produtos = {}
+        for i in itens:
+            produto = resolver_produto(db, usuario, i['produto'])
+            produtos[produto.id] = produto
+            i['produto_id'] = produto.id
+        cliente_obj = resolver_cliente(db, usuario, cliente) if cliente else None
+
+        venda = VendaSchema(
+            descricao='Venda registrada pelo assistente', forma_pagamento=forma_pagamento,
+            cliente_id=cliente_obj.id if cliente_obj else None, desconto=Decimal(str(desconto)),
+            itens=[{'produto_id': i['produto_id'], 'quantidade': i['quantidade']} for i in itens])
+
+        # Prévia (sem travar estoque): a validação definitiva acontece na confirmação.
+        linhas, total = [], Decimal('0')
+        for item in venda.itens:
+            produto = produtos[item.produto_id]
+            if produto.quantidade < item.quantidade:
+                return compactar({'erro': f'Estoque insuficiente de {produto.nome}: há {produto.quantidade}'})
+            subtotal = produto.preco_venda * item.quantidade
+            total += subtotal
+            linhas.append(f'{item.quantidade}× {produto.nome} ({_reais(subtotal)})')
+        if venda.desconto > total:
+            return compactar({'erro': 'Desconto maior que o valor da venda'})
+
+        partes = [f"Venda: {', '.join(linhas)}", forma_pagamento]
+        if cliente_obj:
+            partes.append(f'cliente {nome_curto(cliente_obj.nome)}')
+        if venda.desconto:
+            partes.append(f'desconto {_reais(venda.desconto)}')
+        partes.append(f'total {_reais(total - venda.desconto)}')
+        return _pendente(acao_service.REGISTRAR_VENDA, venda.model_dump(mode='json'), ' · '.join(partes))
+
+    def repor_estoque(produto: str, quantidade: int) -> str:
+        exigir_cargo(usuario, *GESTORES, detail='Você não tem permissão para repor estoque')
+        alvo = resolver_produto(db, usuario, produto)
+        resumo = (f'Repor estoque: +{quantidade} × {alvo.nome} '
+                  f'(estoque {alvo.quantidade} → {alvo.quantidade + quantidade})')
+        return _pendente(acao_service.REPOR_ESTOQUE, {'produto_id': alvo.id, 'quantidade': quantidade}, resumo)
+
+    return [
+        StructuredTool.from_function(
+            func=registrar_venda, name='registrar_venda', args_schema=ArgsRegistrarVenda,
+            description='PREPARA uma venda para o usuário confirmar (não executa). '
+                        'Use os nomes dos produtos e do cliente como o usuário falou.'),
+        StructuredTool.from_function(
+            func=repor_estoque, name='repor_estoque', args_schema=ArgsReporEstoque,
+            description='PREPARA uma entrada de estoque para o usuário confirmar (não executa).'),
+    ]

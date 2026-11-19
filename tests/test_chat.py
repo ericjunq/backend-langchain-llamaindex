@@ -2,24 +2,9 @@ import os
 import httpx
 import pytest
 from langchain_core.messages import AIMessage
-import main
-from services.chat_service import get_fabrica_modelo, MENSAGEM_LIMITE_PASSOS
+from services.chat_service import MENSAGEM_LIMITE_PASSOS
 from tests.fabrica import criar_venda, nova_conta
-from tests.modelo_falso import ModeloRoteirizado, chamar
-
-
-@pytest.fixture
-def modelo():
-    """Instala um modelo roteirizado no lugar do Ollama. Use: modelo(passo1, passo2, ...)."""
-    atual = {}
-
-    def instalar(*passos):
-        atual['m'] = ModeloRoteirizado(*passos)
-        main.app.dependency_overrides[get_fabrica_modelo] = lambda: atual['m']
-        return atual['m']
-
-    yield instalar
-    main.app.dependency_overrides.pop(get_fabrica_modelo, None)
+from tests.modelo_falso import chamar
 
 
 def _chat(client, conta, mensagem='oi', **extra):
@@ -48,7 +33,7 @@ def test_buscar_produtos_devolve_json_compacto(client, loja, modelo):
     r = _chat(client, loja.func, 'quanto tem do produto?')
     assert r.json()['ferramentas_usadas'] == ['buscar_produtos']
     [saida] = m.saidas_ferramentas()
-    assert saida == [{'id': loja.produto['id'], 'produto': loja.produto['nome'],
+    assert saida == [{'produto': loja.produto['nome'], 'codigo': loja.produto['codigo_produto'],
                       'estoque': 10, 'estoque_min': 2, 'preco_venda': 25.5}]
 
 
@@ -84,9 +69,9 @@ def test_permissoes_valem_no_chat(client, loja, modelo):
 
 
 def test_isolamento_entre_empresas_no_chat(client, loja, outra_loja, modelo):
-    m = modelo(chamar('prever_demanda', produto_id=loja.produto['id']), AIMessage('Não encontrei.'))
+    m = modelo(chamar('prever_demanda', produto=loja.produto['nome']), AIMessage('Não encontrei.'))
     _chat(client, outra_loja.dono, 'previsão do produto')
-    assert m.saidas_ferramentas() == [{'erro': 'Produto não encontrado'}]
+    assert m.saidas_ferramentas() == [{'erro': f'Produto "{loja.produto["nome"]}" não encontrado'}]
 
 
 def test_argumentos_invalidos_e_ferramenta_inexistente(client, loja, modelo):
@@ -121,13 +106,26 @@ def test_integracao_ollama_real(client, loja):
     from tests.fabrica import novo_produto
     novo_produto(client, loja.dono.headers, nome='Filtro de papel', quantidade=1, estoque_min=5)
 
-    for pergunta in ('Quais produtos estão abaixo do estoque mínimo?', 'O que eu preciso comprar?'):
+    def perguntar(conta, pergunta):
         inicio = time.perf_counter()
-        r = _chat(client, loja.dono, pergunta)
+        r = _chat(client, conta, pergunta)
         assert r.status_code == 200, r.text
         corpo = r.json()
         print(f'\n[{time.perf_counter() - inicio:.1f}s] {pergunta}\n  ferramentas: {corpo["ferramentas_usadas"]}'
-              f'\n  resposta: {corpo["resposta"]}')
-        assert corpo['ferramentas_usadas'], 'o modelo deveria consultar uma ferramenta'
-        assert 'Filtro' in corpo['resposta']
-    assert 'comprar 4' in corpo['resposta'].lower() or '4 unidades' in corpo['resposta']  # leu a coluna certa
+              f'\n  resposta: {corpo["resposta"]}\n  ações: {[a["resumo"] for a in corpo["acoes_pendentes"]]}')
+        return corpo
+
+    corpo = perguntar(loja.dono, 'Quais produtos estão abaixo do estoque mínimo?')
+    assert corpo['ferramentas_usadas'] and 'Filtro' in corpo['resposta']
+
+    corpo = perguntar(loja.dono, 'O que eu preciso comprar?')
+    assert corpo['ferramentas_usadas'] and 'Filtro' in corpo['resposta']
+    assert '4 unidades' in corpo['resposta'] or 'comprar 4' in corpo['resposta'].lower()  # leu o campo certo
+    assert 'Confirmar' not in corpo['resposta'] and corpo['acoes_pendentes'] == []  # consulta não gera ação
+
+    # Escrita: o modelo deve só PREPARAR a venda (nada muda até o usuário confirmar).
+    from tests.fabrica import estoque
+    corpo = perguntar(loja.func, f"Registra uma venda de 2 {loja.produto['nome']} no pix, sem cliente.")
+    [acao] = corpo['acoes_pendentes']
+    assert acao['resumo'].startswith(f"Venda: 2× {loja.produto['nome']}")
+    assert estoque(client, loja.dono.headers, loja.produto['id']) == 10

@@ -67,6 +67,22 @@ def db():
 
 
 @pytest.fixture
+def modelo():
+    """Troca o Ollama por um modelo roteirizado. Uso: m = modelo(passo1, passo2, ...)."""
+    from services.chat_service import get_fabrica_modelo
+    from tests.modelo_falso import ModeloRoteirizado
+    atual = {}
+
+    def instalar(*passos):
+        atual['m'] = ModeloRoteirizado(*passos)
+        main.app.dependency_overrides[get_fabrica_modelo] = lambda: atual['m']
+        return atual['m']
+
+    yield instalar
+    main.app.dependency_overrides.pop(get_fabrica_modelo, None)
+
+
+@pytest.fixture
 def loja(client):
     from tests.fabrica import criar_loja
     return criar_loja(client)

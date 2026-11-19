@@ -21,9 +21,10 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **relatório de produtos** pronto (`/relatorios/produtos` e `/exportar`). `itens_vendas` ganhou `custo_unitario` → banco `gestao` recriado (estava vazio). 72 testes passando.
 - **2026-11-18**: **IA de previsão v1** (estatística, sem LLM): demanda por produto e sugestão de reposição. 80 testes passando.
 - **2026-11-18**: Ollama 0.40.16 instalado + modelo `qwen3:8b` (5,2 GB, RTX 3050 6 GB). **Chat com 7 ferramentas de leitura** (`POST /chat`). Testado com o modelo real: ~9 s por resposta com o modelo já carregado (~19 s na primeira). 91 testes + 1 de integração (`OLLAMA_TESTE=1 python -m pytest -k integracao -s`).
+- **2026-11-18**: **ações com confirmação no chat**: `registrar_venda` e `repor_estoque` só preparam (tabela `acoes_pendentes`, 10 min); o usuário confirma em `POST /chat/acoes/{id}/confirmar`. Ferramentas recebem produto/cliente **pelo nome**. Testado com o modelo real (~8 s por resposta). 102 testes + integração.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
-  2. **Ações com confirmação no chat** (em andamento): registrar venda e repor estoque.
+  2. ~~Ações com confirmação no chat~~ ✅
   3. Envio de email (transparência LGPD: troca de senha/email) e rotas de direitos do titular.
   4. Frontend Angular.
   5. Previsão v2 (se os dados justificarem): backtest da v1 (erro médio por produto) antes de trocar de modelo; previsão de preço/margem.
@@ -39,7 +40,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
 | Previsões (dono e admin) | `GET /previsoes/produtos/{id}?dias=30` · `GET /previsoes/reposicao?prazo_entrega=7&dias_cobertura=30&apenas_necessarios=true` |
-| Assistente | `POST /chat` (`{"mensagem", "historico": [{"papel": "usuario"/"assistente", "conteudo"}]}` → `{"resposta", "ferramentas_usadas", "acoes_pendentes"}`) |
+| Assistente | `POST /chat` (`{"mensagem", "historico": [{"papel": "usuario"/"assistente", "conteudo"}]}` → `{"resposta", "ferramentas_usadas", "acoes_pendentes"}`) · `POST /chat/acoes/{id}/confirmar` · `DELETE /chat/acoes/{id}` (cancelar) |
 | Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
 Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
@@ -130,4 +131,11 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - **Histórico no frontend** (o servidor não guarda conversas), no máximo 10 mensagens.
   - **Lição do teste real:** formato "colunas + linhas" fez o qwen3:8b desalinhar valores ("comprar 1" em vez de 4). Ferramentas usam **objetos com chaves curtas**; campo sem valor (ex.: sem data de ruptura) é **omitido** para o modelo não inventar.
   - LGPD: ferramentas nunca entregam CPF/email/telefone; cliente aparece como "Maria S."; o conteúdo das mensagens não é logado.
+- **2026-11-18**: ações de escrita no chat. Decisões:
+  - O modelo **nunca executa**: a ferramenta valida, mostra uma prévia ("Venda: 3× Café (R$ 76,50) · pix · total R$ 75,00") e cria uma ação pendente. A **execução é determinística** (rota de confirmação → service), sem passar pelo modelo.
+  - Só quem pediu confirma (nem o dono da mesma empresa). Validade de 10 min; expirada → 410 e apagada; a rotina de retenção limpa as vencidas.
+  - A ação é apagada **na mesma transação** da execução: se falhar (ex.: estoque mudou → 409), ela continua e dá para cancelar; se der certo, não executa duas vezes (`FOR UPDATE` contra duplo clique).
+  - As permissões são checadas de novo na confirmação (quem perdeu o cargo no meio recebe 403).
+  - **Lição do teste real nº 2:** o qwen3:8b inventou um `produto_id` em vez de buscar antes. As ferramentas passaram a receber **nome (ou código) do produto e nome do cliente** e resolvem por dentro. Nome ambíguo → erro com as opções, para o modelo perguntar ao usuário.
+  - **Lição nº 3:** citar o botão "Confirmar" no prompt fazia o modelo mencioná-lo até em consultas. A instrução de confirmação só vem na resposta da ferramenta de escrita (`situacao`).
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, LocalSession
 from security.settings import settings
 import models  # registra todos os models no Base
-from models import RefreshToken, Convite
+from models import RefreshToken, Convite, AcaoPendente
 from routers.auth_routers import auth_router
 from routers.usuario_routers import usuario_router, convite_router
 from routers.cliente_routers import cliente_router
@@ -17,11 +17,12 @@ from routers.previsao_routers import previsao_router
 from routers.chat_routers import chat_router
 
 def limpar_dados_expirados() -> None:
-    """Retenção (LGPD): apaga refresh tokens e convites vencidos. 2 DELETEs usando índice em expires_at."""
+    """Retenção (LGPD): apaga refresh tokens, convites e ações do chat vencidos (DELETEs com índice em expires_at)."""
     agora = datetime.now(timezone.utc)
     with LocalSession() as db:
         db.query(RefreshToken).filter(RefreshToken.expires_at < agora).delete(synchronize_session=False)
         db.query(Convite).filter(Convite.expires_at < agora).delete(synchronize_session=False)
+        db.query(AcaoPendente).filter(AcaoPendente.expires_at < agora).delete(synchronize_session=False)
         db.commit()
 
 @asynccontextmanager

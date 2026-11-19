@@ -17,7 +17,7 @@ from models.usuario_model import Usuarios
 from schemas.chat_schema import ChatRequest
 from security.permissoes import exigir_empresa
 from security.settings import settings
-from services.chat_ferramentas import criar_ferramentas_leitura, executar_ferramenta
+from services.chat_ferramentas import criar_ferramentas_escrita, criar_ferramentas_leitura, executar_ferramenta
 from services.previsao_service import hoje_local
 
 # fábrica(ferramentas) -> objeto com .invoke(mensagens) -> AIMessage
@@ -34,6 +34,9 @@ Regras:
 - Mencione a confiança da previsão quando ela for baixa.
 - Se uma ferramenta devolver "erro" (por exemplo, falta de permissão), explique isso ao usuário.
 - Nunca peça nem mostre CPF, email ou telefone.
+- Para registrar venda ou repor estoque, use registrar_venda ou repor_estoque: elas só PREPARAM a ação
+  e devolvem uma "situacao" que você deve repassar ao usuário. Nunca diga que a ação já foi feita.
+- Se faltar informação para uma venda (produto, quantidade ou forma de pagamento), pergunte antes.
 """
 
 MENSAGEM_LIMITE_PASSOS = ('Não consegui concluir essa resposta com segurança. '
@@ -64,11 +67,11 @@ def _limpar(texto) -> str:
     return _PENSAMENTO.sub('', texto).strip()
 
 
-def conversar(db: Session, usuario: Usuarios, dados: ChatRequest, fabrica: FabricaModelo,
-              ferramentas_extras: list | None = None) -> dict:
+def conversar(db: Session, usuario: Usuarios, dados: ChatRequest, fabrica: FabricaModelo) -> dict:
     exigir_empresa(usuario)
 
-    ferramentas = criar_ferramentas_leitura(db, usuario) + (ferramentas_extras or [])
+    pendentes: list = []  # ações de escrita preparadas nesta mensagem (aguardam confirmação)
+    ferramentas = criar_ferramentas_leitura(db, usuario) + criar_ferramentas_escrita(db, usuario, pendentes)
     por_nome = {f.name: f for f in ferramentas}
     modelo = fabrica(ferramentas)
 
@@ -102,4 +105,4 @@ def conversar(db: Session, usuario: Usuarios, dados: ChatRequest, fabrica: Fabri
                      else '{"erro":"ferramenta inexistente"}')
             mensagens.append(ToolMessage(content=saida, tool_call_id=chamada['id']))
 
-    return {'resposta': resposta, 'ferramentas_usadas': usadas}
+    return {'resposta': resposta, 'ferramentas_usadas': usadas, 'acoes_pendentes': pendentes}
