@@ -149,6 +149,35 @@ def exportar_meus_dados(db: Session, usuario: Usuarios) -> dict:
         ],
     }
 
+def anonimizar_conta(db: Session, usuario: Usuarios, senha: str) -> dict:
+    """Direito à anonimização (LGPD). O registro fica (vendas e clientes apontam para ele), mas
+    sem nada que identifique a pessoa; a conta é desativada e não volta a funcionar."""
+    import secrets
+    from models.acao_pendente import AcaoPendente
+
+    if not verificar_senha(senha, usuario.senha_hash):
+        raise HTTPException(status_code=401, detail='Senha incorreta')
+    if usuario.cargo == CargosEnum.dono:
+        raise HTTPException(status_code=409, detail='O dono não pode anonimizar a conta enquanto for dono da empresa')
+
+    nome, email = usuario.nome, usuario.email
+
+    revogar_todos(usuario.id, db)
+    db.query(AcaoPendente).filter(AcaoPendente.usuario_id == usuario.id).delete(synchronize_session=False)
+    usuario.nome = 'Usuário'
+    usuario.sobrenome = 'anonimizado'
+    usuario.email = f'anonimizado-{usuario.id}@anonimizado.invalid'  # único e não entregável (.invalid)
+    usuario.cpf = None
+    usuario.telefone = None
+    usuario.senha_hash = criptografar_senha(secrets.token_urlsafe(32))  # ninguém conhece esta senha
+    usuario.status = False
+    usuario.empresa_id = None
+    usuario.cargo = None
+    db.commit()
+
+    email_service.avisar_conta_anonimizada(nome, email)
+    return {'message': 'Conta anonimizada. Seus dados pessoais foram removidos e o acesso foi encerrado.'}
+
 def vincular_empresa(token: UsarConvite, db: Session, usuario: Usuarios):
     if usuario.empresa_id:
         raise HTTPException(status_code=403, detail='Você já está vinculado a uma empresa')

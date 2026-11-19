@@ -54,19 +54,18 @@ def _validar_refresh(token: str, db: Session) -> RefreshToken:
 def refresh(token: str, db: Session) -> dict:
     token_db = _validar_refresh(token, db)
 
-    # Detecção de reuso: um refresh já usado voltou → possível roubo. Derruba todas as sessões.
-    if token_db.revoked:
-        revogar_todos(token_db.usuario_id, db)
-        db.commit()
-        dono = db.get(Usuarios, token_db.usuario_id)
-        if dono:
-            import services.email_service as email_service
-            email_service.avisar_sessao_comprometida(dono.nome, dono.email)
-        raise HTTPException(status_code=401, detail='Sessão comprometida, faça o login novamente')
-
+    # Conta desativada/anonimizada: só recusa (sem "detecção de reuso" nem alerta por email).
     usuario = db.get(Usuarios, token_db.usuario_id)
     if usuario is None or not usuario.status:
         raise TOKEN_INVALIDO
+
+    # Detecção de reuso: um refresh já usado voltou → possível roubo. Derruba todas as sessões.
+    if token_db.revoked:
+        revogar_todos(usuario.id, db)
+        db.commit()
+        import services.email_service as email_service
+        email_service.avisar_sessao_comprometida(usuario.nome, usuario.email)
+        raise HTTPException(status_code=401, detail='Sessão comprometida, faça o login novamente')
 
     token_db.revoked = True
     return emitir_tokens(usuario.id, db)  # um único commit: revogação + novo token

@@ -43,7 +43,8 @@ def _enviar_smtp(destinatario: str, assunto: str, corpo: str) -> None:
 
 
 def enviar(destinatario: str, assunto: str, corpo: str) -> None:
-    if not destinatario:
+    # .invalid é reservado (RFC 2606): usado nas contas anonimizadas, nunca recebe email.
+    if not destinatario or destinatario.lower().endswith('.invalid'):
         return
     if settings.email_backend == 'memoria':
         caixa_de_saida.append({'para': destinatario, 'assunto': assunto, 'corpo': corpo})
@@ -66,6 +67,14 @@ def avisar_email_alterado(nome: str, email_antigo: str, email_novo: str) -> None
     # Avisa os dois endereços: se a troca foi indevida, o dono do email antigo fica sabendo.
     enviar(email_antigo, 'O email da sua conta foi alterado', corpo)
     enviar(email_novo, 'O email da sua conta foi alterado', corpo)
+
+
+def avisar_conta_anonimizada(nome: str, email: str) -> None:
+    """Último email para o endereço antigo: depois disso ele não fica mais guardado."""
+    enviar(email, 'Sua conta foi anonimizada',
+           f'Olá, {nome}.\n\nConforme solicitado, seus dados pessoais foram anonimizados e sua conta foi '
+           'desativada. O histórico de vendas da empresa continua existindo, sem identificar você.'
+           '\n\nEste é um aviso automático; não responda este email.')
 
 
 def avisar_sessao_comprometida(nome: str, email: str) -> None:

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from models.usuario_model import Usuarios
 from security.dependencies import get_db
 from security.security import get_current_user
-from schemas.usuario_schema import UsuarioResponse, UsuarioSchema, UsuarioUpdate
+from schemas.usuario_schema import AnonimizarConta, UsuarioResponse, UsuarioSchema, UsuarioUpdate
 from schemas.convite_schema import UsarConvite
 import services.usuario_service as service
 
@@ -25,6 +25,12 @@ def meu_usuario(usuario: Usuarios = Depends(get_current_user)):
 def exportar_meus_dados(db: Session = Depends(get_db), usuario: Usuarios = Depends(get_current_user)):
     dados = jsonable_encoder(service.exportar_meus_dados(db, usuario))
     return JSONResponse(dados, headers={'Cache-Control': 'no-store'})
+
+# Direito à anonimização (LGPD). POST com a senha no corpo (DELETE com corpo não é bem suportado).
+@usuario_router.post('/me/anonimizacao')
+def anonimizar_conta(dados: AnonimizarConta, db: Session = Depends(get_db),
+                     usuario: Usuarios = Depends(get_current_user)):
+    return service.anonimizar_conta(db, usuario, dados.senha)
 
 @usuario_router.patch('/me', response_model=UsuarioResponse)
 def editar_usuario(

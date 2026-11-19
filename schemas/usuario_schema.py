@@ -34,6 +34,9 @@ class FuncionarioFiltro(BaseModel):
     cpf: Optional[CPF] = None
     telefone: Optional[Telefone] = None
 
+class AnonimizarConta(BaseModel):
+    senha: str = Field(description='Senha atual, para confirmar que é o próprio titular')
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

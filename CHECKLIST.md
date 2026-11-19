@@ -30,6 +30,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **Pendente (decisão do usuário)**: (a) adotar migrações em SQL puro versionadas + prefixo `/api/v1` já, ou (b) só antes de produção; escopo e retenção da **auditoria**. A anonimização da conta e a auditoria esperam essa decisão (mudam o banco).
 - **2026-11-18**: usuário aprovou as recomendações: **`/api/v1`** (feito), migrações SQL versionadas, anonimização da conta, auditoria (escritas + exportações + eventos de login; retenção de 1 ano para acesso e 5 anos para o resto) e cancelamento de venda pelo chat com motivo.
 - **2026-11-18**: **migrações SQL versionadas** no lugar do `create_all`: `V001__estrutura_inicial.sql` (retrato dos models), executor com checksum, trava contra execução simultânea e transação por arquivo. Teste de paridade migrações × models. Banco `gestao` (vazio) recriado pelas migrações.
+- **2026-11-18**: **anonimização da conta** (`V002`: CPF/telefone anuláveis — 1ª migração incremental, aplicada sem recriar o banco). Nome vira "Usuário anonimizado", email `anonimizado-{id}@anonimizado.invalid`, CPF/telefone apagados, senha aleatória, sessões e ações do chat removidas, desvinculado da empresa; vendas/clientes continuam apontando para o registro. Dono não pode (409). Bug achado pelo teste e corrigido: refresh de conta desativada disparava "alerta de reuso" por email.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -44,7 +45,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 | Recurso | Rotas |
 |---|---|
 | Auth | `POST /auth/login` (form: username/password) · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/logout-geral` (os três com `{"refresh_token"}`) |
-| Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `GET /usuarios/me/dados` (exportar meus dados) · `POST /convites/aceitar` (`{"token"}`) |
+| Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `GET /usuarios/me/dados` (exportar meus dados) · `POST /usuarios/me/anonimizacao` (`{"senha"}`) · `POST /convites/aceitar` (`{"token"}`) |
 | Empresa (a do usuário logado) | `POST /empresa` · `GET /empresa` · `PATCH /empresa` · `GET /empresa/funcionarios` · `POST /empresa/funcionarios/busca` · `PATCH /empresa/funcionarios/{id}` (cargo) · `DELETE /empresa/funcionarios/{id}` (desvincula) · `POST /empresa/convites` |
 | Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
@@ -81,7 +82,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [x] Limpeza de dados vencidos agendada (ao iniciar + a cada `LIMPEZA_INTERVALO_HORAS`, padrão 24 h)
 - [x] Email de aviso: troca de senha, troca de email (antigo e novo) e sessão comprometida. Backend `console` em dev; SMTP via `.env`
 - [x] Direitos do titular: exportar "meus dados" (`GET /usuarios/me/dados`)
-- [ ] Direitos do titular: anonimizar a própria conta (aguarda a decisão sobre migrações: muda o model `usuarios`)
+- [x] Direitos do titular: anonimizar a própria conta (`POST /usuarios/me/anonimizacao`)
+- [ ] Transferência de dono (hoje o dono não pode anonimizar a conta enquanto for dono)
 - [x] Limite de login: 5 falhas em 15 min por (IP + email) → 429 com Retry-After
 - [ ] Limite de login está em memória (por processo): com vários workers/servidores, trocar por Redis; atrás de proxy, `uvicorn --proxy-headers`
 - [x] Relatório de produtos
@@ -158,7 +160,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - **2026-11-18**: migrações. Decisões:
   - Executor próprio (~100 linhas) em vez de Flyway/Alembic: SQL puro como o usuário pediu, sem dependência nova.
   - Checksum SHA-256 com quebras de linha normalizadas (o git no Windows troca `
-` por `
+` por `
+
 `).
   - `pg_advisory_lock`: dois servidores subindo juntos não migram ao mesmo tempo.
   - Cada arquivo roda numa transação (o Postgres desfaz até DDL): uma falha não deixa o banco pela metade.

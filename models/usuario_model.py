@@ -13,8 +13,9 @@ class Usuarios(Base):
     # Únicos no sistema todo: o login é por email e a conta existe antes de entrar numa empresa.
     email = Column(String(60), nullable=False, unique=True)
     senha_hash = Column(String(255), nullable=False)
-    cpf = Column(String(11), nullable=False, unique=True)
-    telefone = Column(String(11), nullable=False, unique=True)
+    # Nuláveis só para a anonimização (V002); o cadastro continua exigindo os dois.
+    cpf = Column(String(11), nullable=True, unique=True)
+    telefone = Column(String(11), nullable=True, unique=True)
     cargo = Column(SAEnum(CargosEnum), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
