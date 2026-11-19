@@ -24,6 +24,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **ações com confirmação no chat**: `registrar_venda` e `repor_estoque` só preparam (tabela `acoes_pendentes`, 10 min); o usuário confirma em `POST /chat/acoes/{id}/confirmar`. Ferramentas recebem produto/cliente **pelo nome**. Testado com o modelo real (~8 s por resposta). 102 testes + integração.
 - **2026-11-18**: verificação de segurança do Ollama. Instalador oficial (GitHub, hash conferido pelo winget), assinatura **Ollama Inc./DigiCert** válida, Windows Defender sem ameaças (programa e modelo). Versão 0.40.16 sem as CVEs conhecidas de 2026. Escuta só em `127.0.0.1` + **regra no Firewall do Windows bloqueando a entrada na 11434** (acesso local segue funcionando).
 - **2026-11-18**: **emails de aviso** (`services/email_service.py`): troca de senha, troca de email (para os dois endereços) e alerta de sessão comprometida. Backends `console` (dev, só loga o destinatário mascarado), `smtp` (em segundo plano, STARTTLS) e `memoria` (testes).
+- **2026-11-18**: **exportar meus dados** (`GET /usuarios/me/dados`, sem cache): perfil completo, empresa, sessões ativas e resumo de atividade. Não inclui hashes nem dados de clientes (pertencem a eles).
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -36,7 +37,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 | Recurso | Rotas |
 |---|---|
 | Auth | `POST /auth/login` (form: username/password) · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/logout-geral` (os três com `{"refresh_token"}`) |
-| Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `POST /convites/aceitar` (`{"token"}`) |
+| Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `GET /usuarios/me/dados` (exportar meus dados) · `POST /convites/aceitar` (`{"token"}`) |
 | Empresa (a do usuário logado) | `POST /empresa` · `GET /empresa` · `PATCH /empresa` · `GET /empresa/funcionarios` · `POST /empresa/funcionarios/busca` · `PATCH /empresa/funcionarios/{id}` (cargo) · `DELETE /empresa/funcionarios/{id}` (desvincula) · `POST /empresa/convites` |
 | Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
 | Produtos | `POST /produtos` · `GET /produtos?nome=&codigo_produto=&abaixo_estoque_min=&periodo=` · `GET/PATCH/DELETE /produtos/{id}` · `POST /produtos/{id}/reposicao` |
@@ -72,7 +73,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [ ] Teste de concorrência real (duas vendas simultâneas do último item). Hoje o `FOR UPDATE` só é coberto indiretamente
 - [ ] Limpeza de dados vencidos só roda ao iniciar → agendar (ex.: tarefa diária)
 - [x] Email de aviso: troca de senha, troca de email (antigo e novo) e sessão comprometida. Backend `console` em dev; SMTP via `.env`
-- [ ] Direitos do titular: exportar "meus dados", anonimizar a própria conta
+- [x] Direitos do titular: exportar "meus dados" (`GET /usuarios/me/dados`)
+- [ ] Direitos do titular: anonimizar a própria conta (aguarda a decisão sobre migrações: muda o model `usuarios`)
 - [ ] Rate limit no login (força bruta)
 - [x] Relatório de produtos
 - [ ] Margem por produto usa o faturamento **bruto** (o desconto é da venda inteira, não de cada item). Se precisar: ratear o desconto entre os itens

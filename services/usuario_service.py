@@ -102,6 +102,46 @@ def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):
         email_service.avisar_email_alterado(usuario.nome, email_antigo, usuario.email)
     return usuario
 
+def exportar_meus_dados(db: Session, usuario: Usuarios) -> dict:
+    """Direito de acesso (LGPD art. 18): tudo o que o sistema guarda sobre o titular.
+    4 consultas, todas por índice (usuario_id). Dados de clientes cadastrados por ele não entram:
+    pertencem aos clientes e à empresa, não ao titular."""
+    from models.empresa_model import Empresa
+    from models.cliente_model import Clientes
+    from models.refresh_token import RefreshToken
+    from models.vendas_model import Vendas
+    from sqlalchemy import func
+
+    empresa = db.get(Empresa, usuario.empresa_id) if usuario.empresa_id else None
+    agora = datetime.now(timezone.utc)
+    sessoes = (
+        db.query(RefreshToken.created_at, RefreshToken.expires_at)
+        .filter(RefreshToken.usuario_id == usuario.id, RefreshToken.revoked.is_(False),
+                RefreshToken.expires_at > agora)
+        .order_by(RefreshToken.created_at.desc())
+        .all()
+    )
+
+    return {
+        'gerado_em': agora,
+        'perfil': {
+            'id': usuario.id, 'nome': usuario.nome, 'sobrenome': usuario.sobrenome, 'email': usuario.email,
+            'cpf': usuario.cpf, 'telefone': usuario.telefone,
+            'cargo': usuario.cargo.value if usuario.cargo else None,
+            'conta_ativa': usuario.status, 'criado_em': usuario.created_at, 'atualizado_em': usuario.updated_at,
+        },
+        'empresa': {'id': empresa.id, 'nome': empresa.nome, 'cnpj': empresa.cnpj} if empresa else None,
+        'sessoes_ativas': [{'iniciada_em': s.created_at, 'expira_em': s.expires_at} for s in sessoes],
+        'atividade': {
+            'vendas_registradas': db.query(func.count(Vendas.id)).filter(Vendas.usuario_id == usuario.id).scalar(),
+            'clientes_cadastrados': db.query(func.count(Clientes.id)).filter(Clientes.usuario_id == usuario.id).scalar(),
+        },
+        'observacoes': [
+            'Senhas e tokens são guardados apenas como hash e não podem ser exportados.',
+            'Dados dos clientes que você cadastrou pertencem a eles e à empresa, por isso não estão aqui.',
+        ],
+    }
+
 def vincular_empresa(token: UsarConvite, db: Session, usuario: Usuarios):
     if usuario.empresa_id:
         raise HTTPException(status_code=403, detail='Você já está vinculado a uma empresa')

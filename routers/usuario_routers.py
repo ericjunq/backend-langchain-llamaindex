@@ -1,4 +1,6 @@
 from fastapi import Depends, APIRouter
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from models.usuario_model import Usuarios
 from security.dependencies import get_db
@@ -17,6 +19,12 @@ def cadastrar_usuario(dados: UsuarioSchema, db: Session = Depends(get_db)):
 @usuario_router.get('/me', response_model=UsuarioResponse)
 def meu_usuario(usuario: Usuarios = Depends(get_current_user)):
     return usuario
+
+# Direito de acesso do titular (LGPD). Sem cache: a resposta tem CPF, email e telefone.
+@usuario_router.get('/me/dados')
+def exportar_meus_dados(db: Session = Depends(get_db), usuario: Usuarios = Depends(get_current_user)):
+    dados = jsonable_encoder(service.exportar_meus_dados(db, usuario))
+    return JSONResponse(dados, headers={'Cache-Control': 'no-store'})
 
 @usuario_router.patch('/me', response_model=UsuarioResponse)
 def editar_usuario(
