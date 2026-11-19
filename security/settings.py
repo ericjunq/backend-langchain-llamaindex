@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # Auditoria: prazos de retenção (dias). 'acesso' (logins, exportações, conta) e demais (operações e vendas)
     auditoria_retencao_acesso_dias: int = 365
     auditoria_retencao_demais_dias: int = 1825
+    # Cookie da sessão (refresh token): Secure exige HTTPS (localhost é exceção nos navegadores).
+    # Só desligar em testes automatizados.
+    cookie_secure: bool = True
     # Limite de login: falhas por (IP + email) dentro da janela → 429
     login_max_falhas: int = 5
     login_janela_minutos: int = 15

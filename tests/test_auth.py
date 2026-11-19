@@ -1,4 +1,4 @@
-from tests.fabrica import SENHA, dados_usuario, login, nova_conta
+from tests.fabrica import SENHA, dados_usuario, login, nova_conta, renovar, sessao
 
 
 def test_cadastro_normaliza_dados_e_nao_expoe_dados_pessoais(client, db):
@@ -50,32 +50,32 @@ def test_refresh_rotaciona_e_detecta_reuso(client):
     conta = nova_conta(client)
     antigo = conta.tokens['refresh_token']
 
-    r = client.post('/auth/refresh', json={'refresh_token': antigo})
+    r = renovar(client, antigo)
     assert r.status_code == 200
-    novo = r.json()['refresh_token']
+    novo = r.cookies['refresh_token']
     assert novo != antigo
 
     # Reusar o antigo = possível roubo: derruba todas as sessões, inclusive a nova.
-    assert client.post('/auth/refresh', json={'refresh_token': antigo}).status_code == 401
-    assert client.post('/auth/refresh', json={'refresh_token': novo}).status_code == 401
+    assert renovar(client, antigo).status_code == 401
+    assert renovar(client, novo).status_code == 401
 
 
 def test_refresh_rejeita_access_token(client):
     conta = nova_conta(client)
-    r = client.post('/auth/refresh', json={'refresh_token': conta.tokens['access_token']})
+    r = renovar(client, conta.tokens['access_token'])
     assert r.status_code == 401
 
 
 def test_logout_e_logout_geral(client):
     conta = nova_conta(client)
-    segunda_sessao = login(client, conta.email).json()
+    segunda_sessao = sessao(client, conta.email)
 
-    assert client.post('/auth/logout', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 200
-    assert client.post('/auth/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
+    assert renovar(client, conta.tokens['refresh_token'], 'logout').status_code == 200
+    assert renovar(client, conta.tokens['refresh_token']).status_code == 401
 
-    terceira = login(client, conta.email).json()
-    assert client.post('/auth/logout-geral', json={'refresh_token': terceira['refresh_token']}).status_code == 200
-    assert client.post('/auth/refresh', json={'refresh_token': segunda_sessao['refresh_token']}).status_code == 401
+    terceira = sessao(client, conta.email)
+    assert renovar(client, terceira['refresh_token'], 'logout-geral').status_code == 200
+    assert renovar(client, segunda_sessao['refresh_token']).status_code == 401
 
 
 def test_troca_de_senha_exige_senha_atual_e_encerra_sessoes(client):
@@ -87,7 +87,7 @@ def test_troca_de_senha_exige_senha_atual_e_encerra_sessoes(client):
     ok = client.patch('/usuarios/me', headers=conta.headers,
                       json={'senha': 'novasenha123', 'senha_atual': SENHA})
     assert ok.status_code == 200
-    assert client.post('/auth/refresh', json={'refresh_token': conta.tokens['refresh_token']}).status_code == 401
+    assert renovar(client, conta.tokens['refresh_token']).status_code == 401
     assert login(client, conta.email).status_code == 401
     assert login(client, conta.email, 'novasenha123').status_code == 200
 
@@ -124,3 +124,30 @@ def test_rotas_estao_versionadas_em_api_v1(client):
     assert client.get('http://testserver/usuarios/me', headers=conta.headers).status_code == 404  # sem versão
     assert client.get('http://testserver/openapi.json').json()['components']['securitySchemes'][
         'OAuth2PasswordBearer']['flows']['password']['tokenUrl'] == '/api/v1/auth/login'
+
+
+def test_refresh_token_so_no_cookie_httponly(client):
+    from security.settings import settings
+    conta = nova_conta(client)
+    settings.cookie_secure = True
+    try:
+        r = login(client, conta.email)
+    finally:
+        settings.cookie_secure = False
+    assert set(r.json()) == {'access_token', 'token_type', 'expires_in'}  # nada de refresh no corpo
+    assert r.json()['expires_in'] == settings.access_token_expires_minutes * 60
+    cookie = r.headers['set-cookie'].lower()
+    for atributo in ('refresh_token=', 'httponly', 'secure', 'samesite=strict', 'path=/api/v1/auth'):
+        assert atributo in cookie, atributo
+
+
+def test_sessao_sem_cookie_e_logout_idempotente(client):
+    assert client.post('/auth/refresh').status_code == 401
+    assert client.post('/auth/logout-geral').status_code == 401
+    r = client.post('/auth/logout')  # sem cookie: só garante que ele some
+    assert r.status_code == 200 and 'max-age=0' in r.headers['set-cookie'].lower()
+
+    conta = nova_conta(client)
+    r = renovar(client, conta.tokens['refresh_token'], 'logout')
+    assert r.status_code == 200 and 'max-age=0' in r.headers['set-cookie'].lower()
+    assert renovar(client, conta.tokens['refresh_token']).status_code == 401

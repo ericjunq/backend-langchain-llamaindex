@@ -2,7 +2,7 @@
 import logging
 from services import email_service
 from security.settings import settings
-from tests.fabrica import SENHA, login, nova_conta
+from tests.fabrica import SENHA, login, nova_conta, renovar, sessao
 
 
 def _caixa():
@@ -32,8 +32,8 @@ def test_sem_aviso_quando_nada_muda_ou_falha(client):
 def test_alerta_de_sessao_comprometida(client):
     conta = nova_conta(client)
     antigo = conta.tokens['refresh_token']
-    client.post('/auth/refresh', json={'refresh_token': antigo})
-    client.post('/auth/refresh', json={'refresh_token': antigo})  # reuso
+    renovar(client, antigo)
+    renovar(client, antigo)  # reuso
     assert [e['assunto'] for e in _caixa()] == ['Alerta de segurança: sessões encerradas']
 
 

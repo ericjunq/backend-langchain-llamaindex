@@ -1,5 +1,5 @@
 """LGPD — direitos do titular."""
-from tests.fabrica import criar_venda, login, nova_conta
+from tests.fabrica import criar_venda, login, nova_conta, renovar, sessao
 
 
 def test_exportar_meus_dados(client, loja, db):
@@ -47,7 +47,7 @@ def test_anonimizar_conta(client, loja, db):
     assert eu.email.endswith('@anonimizado.invalid')
     # Acesso encerrado: token atual, refresh e login deixam de funcionar.
     assert client.get('/usuarios/me', headers=loja.func.headers).status_code == 401
-    assert client.post('/auth/refresh', json={'refresh_token': loja.func.tokens['refresh_token']}).status_code == 401
+    assert renovar(client, loja.func.tokens['refresh_token']).status_code == 401
     assert login(client, email).status_code == 401
     # O histórico fica, sem identificar a pessoa.
     vendas = client.get('/vendas', headers=loja.dono.headers).json()

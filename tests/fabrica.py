@@ -48,16 +48,32 @@ def dados_usuario(**extra) -> dict:
 
 
 def login(client, email: str, senha: str = SENHA):
-    return client.post('/auth/login', data={'username': email, 'password': senha})
+    r = client.post('/auth/login', data={'username': email, 'password': senha})
+    # Vários usuários usam o mesmo cliente HTTP: o cookie de sessão é lido da resposta e
+    # enviado explicitamente (renovar), em vez de ficar no "navegador" compartilhado.
+    client.cookies.clear()
+    return r
+
+
+def sessao(client, email: str, senha: str = SENHA) -> dict:
+    """Login → {'access_token', 'refresh_token' (do cookie httpOnly)}."""
+    r = login(client, email, senha)
+    assert r.status_code == 200, r.text
+    return {'access_token': r.json()['access_token'], 'refresh_token': r.cookies['refresh_token']}
+
+
+def renovar(client, refresh_token: str, rota: str = 'refresh'):
+    """POST /auth/{refresh|logout|logout-geral} enviando o cookie de sessão."""
+    r = client.post(f'/auth/{rota}', headers={'Cookie': f'refresh_token={refresh_token}'})
+    client.cookies.clear()
+    return r
 
 
 def nova_conta(client, **extra) -> Conta:
     dados = dados_usuario(**extra)
     r = client.post('/usuarios', json=dados)
     assert r.status_code == 201, r.text
-    r_login = login(client, dados['email'])
-    assert r_login.status_code == 200, r_login.text
-    return Conta(id=r.json()['id'], email=dados['email'], tokens=r_login.json())
+    return Conta(id=r.json()['id'], email=dados['email'], tokens=sessao(client, dados['email']))
 
 
 def nova_empresa(client, headers) -> dict:

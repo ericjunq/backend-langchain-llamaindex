@@ -33,6 +33,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **2026-11-18**: **anonimização da conta** (`V002`: CPF/telefone anuláveis — 1ª migração incremental, aplicada sem recriar o banco). Nome vira "Usuário anonimizado", email `anonimizado-{id}@anonimizado.invalid`, CPF/telefone apagados, senha aleatória, sessões e ações do chat removidas, desvinculado da empresa; vendas/clientes continuam apontando para o registro. Dono não pode (409). Bug achado pelo teste e corrigido: refresh de conta desativada disparava "alerta de reuso" por email.
 - **2026-11-18**: **auditoria** (`V003`, `services/auditoria_service.py`, `GET /auditoria`): escritas de produtos, estoque, clientes, vendas (cancelamento com motivo), empresa, cargos, convites e conta; exportações; login/falha/logout geral/reuso de token. Registro na mesma transação da operação. Origem `api`/`chat`. 132 testes.
 - **2026-11-18**: **cancelar venda pelo chat** (`cancelar_venda`): motivo **obrigatório** (3–60 caracteres; o modelo pergunta se faltar), mesmas regras da API já na preparação (funcionário só as próprias, outra empresa = não encontrada, já cancelada = erro), prévia com itens/valor/data, execução só na confirmação, auditoria com origem `chat`. Cadastro de clientes pelo chat: **não** (decisão do usuário: manual, mais atenção).
+- **2026-11-18**: **frontend Angular** decidido: pasta irmã `../frontend-angular` (git próprio), **Tailwind** sob medida, sessão com **refresh token em cookie httpOnly**. Backend ajustado: login/refresh devolvem só o access token; o refresh vai no cookie `httpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -46,7 +47,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 
 | Recurso | Rotas |
 |---|---|
-| Auth | `POST /auth/login` (form: username/password) · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/logout-geral` (os três com `{"refresh_token"}`) |
+| Auth | `POST /auth/login` (form: username/password → `{access_token, expires_in}` + cookie httpOnly `refresh_token`) · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/logout-geral` (os três usam o cookie; sem corpo) |
 | Usuários | `POST /usuarios` (cadastro) · `GET /usuarios/me` · `PATCH /usuarios/me` · `GET /usuarios/me/dados` (exportar meus dados) · `POST /usuarios/me/anonimizacao` (`{"senha"}`) · `POST /convites/aceitar` (`{"token"}`) |
 | Empresa (a do usuário logado) | `POST /empresa` · `GET /empresa` · `PATCH /empresa` · `GET /empresa/funcionarios` · `POST /empresa/funcionarios/busca` · `PATCH /empresa/funcionarios/{id}` (cargo) · `DELETE /empresa/funcionarios/{id}` (desvincula) · `POST /empresa/convites` |
 | Clientes | `POST /clientes` · `GET /clientes?usuario_id=&periodo=` · `POST /clientes/busca` (nome/email/cpf/telefone no corpo) · `GET/PATCH/DELETE /clientes/{id}` |
@@ -179,4 +180,10 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Origem `chat` via `ContextVar` na confirmação das ações: os services não precisaram mudar de assinatura.
   - Dinheiro guardado como texto (`"30.00"`), não float.
   - Só o dono consulta (admin não); nenhuma rota edita ou apaga a trilha.
+- **2026-11-18**: sessão por cookie (escolha do usuário). Decisões:
+  - Refresh token **inacessível ao JavaScript** (httpOnly): um XSS não rouba a sessão. Access token só em memória no frontend (curto, 15 min).
+  - `SameSite=Strict` = proteção contra CSRF (o cookie não vai em requisições originadas em outros sites); `Path=/api/v1/auth` = o cookie só trafega nas rotas de sessão.
+  - Mudança incompatível na v1, mas **a v1 ainda não tinha consumidores** → ajustada sem criar v2. A partir do frontend publicado, mudanças assim seguem a regra v1/v2.
+  - Logout é idempotente (sem cookie ou com cookie inválido, só apaga o cookie).
+  - `COOKIE_SECURE=false` só nos testes automatizados (cliente http://).
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

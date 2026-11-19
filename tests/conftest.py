@@ -18,6 +18,7 @@ if not (_url.database or '').endswith('_teste'):
     _url = _url.set(database=f'{_url.database}_teste')
 assert _url.database.endswith('_teste'), 'Proteção: os testes só rodam em banco terminado em _teste'
 settings.database_url = _url.render_as_string(hide_password=False)
+settings.cookie_secure = False  # o cliente de testes usa http://; navegadores usam HTTPS/localhost
 
 def _admin_conn():
     """Conexão no banco 'postgres' do mesmo servidor, para criar/apagar o banco de teste."""

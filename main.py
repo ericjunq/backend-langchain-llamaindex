@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, LocalSession
 from migracoes import aplicar as aplicar_migracoes
 from security.settings import settings
+from utils.versao_api import API_V1
 import models  # registra todos os models no Base
 from models import RefreshToken, Convite, AcaoPendente
 from routers.auth_routers import auth_router
@@ -68,7 +69,6 @@ app.add_middleware(
 
 # Versionamento da API: tudo sob /api/v1. Mudança incompatível → nova versão (/api/v2) só para as
 # rotas afetadas; a v1 continua no ar com os cabeçalhos Deprecation/Sunset até a data de desligamento.
-API_V1 = '/api/v1'
 api_v1 = APIRouter(prefix=API_V1)
 for router in (auth_router, usuario_router, convite_router, cliente_router, empresa_router, produto_router,
                venda_router, relatorio_router, previsao_router, chat_router, auditoria_router):

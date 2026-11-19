@@ -38,9 +38,7 @@ class AnonimizarConta(BaseModel):
     senha: str = Field(description='Senha atual, para confirmar que é o próprio titular')
 
 class TokenResponse(BaseModel):
+    """O refresh token NÃO vem aqui: vai no cookie httpOnly (ver auth_routers)."""
     access_token: str
-    refresh_token: str
     token_type: str = 'bearer'
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
+    expires_in: int  # segundos até o access token vencer
