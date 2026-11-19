@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from security.security import verificar_senha, criptografar_senha, HASH_FALSO
 from services.refresh_token_service import emitir_tokens, revogar_todos
+import services.email_service as email_service
 from utils.enums import CargosEnum
 from datetime import datetime, timezone
 
@@ -75,7 +76,11 @@ def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):
         if conflito:
             raise HTTPException(status_code=409, detail='Email ou telefone já cadastrado')
 
-    if 'senha' in dados_update:
+    trocou_senha = 'senha' in dados_update
+    email_antigo = usuario.email
+    trocou_email = 'email' in dados_update and dados_update['email'] != email_antigo
+
+    if trocou_senha:
         dados_update['senha_hash'] = criptografar_senha(dados_update.pop('senha'))
         # Troca de senha encerra as outras sessões.
         revogar_todos(usuario.id, db)
@@ -90,7 +95,11 @@ def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):
         raise HTTPException(status_code=409, detail='Email ou telefone já cadastrado')
     db.refresh(usuario)
 
-    # TODO (LGPD/transparência): avisar por email a troca de email/senha.
+    # Transparência (LGPD): avisos só depois do commit (não avisa o que não aconteceu).
+    if trocou_senha:
+        email_service.avisar_senha_alterada(usuario.nome, usuario.email)
+    if trocou_email:
+        email_service.avisar_email_alterado(usuario.nome, email_antigo, usuario.email)
     return usuario
 
 def vincular_empresa(token: UsarConvite, db: Session, usuario: Usuarios):

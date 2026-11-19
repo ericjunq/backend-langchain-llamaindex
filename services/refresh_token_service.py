@@ -58,6 +58,10 @@ def refresh(token: str, db: Session) -> dict:
     if token_db.revoked:
         revogar_todos(token_db.usuario_id, db)
         db.commit()
+        dono = db.get(Usuarios, token_db.usuario_id)
+        if dono:
+            import services.email_service as email_service
+            email_service.avisar_sessao_comprometida(dono.nome, dono.email)
         raise HTTPException(status_code=401, detail='Sessão comprometida, faça o login novamente')
 
     usuario = db.get(Usuarios, token_db.usuario_id)

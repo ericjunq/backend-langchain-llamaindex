@@ -1,5 +1,6 @@
 from pydantic_settings import SettingsConfigDict, BaseSettings
 from pathlib import Path
+from typing import Literal
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -18,6 +19,13 @@ class Settings(BaseSettings):
     ollama_modelo: str = 'qwen3:8b'
     chat_max_passos: int = 5        # chamadas de ferramenta por mensagem (limita tempo e loops)
     chat_timeout_segundos: int = 120
+    # Emails de aviso: console (dev, só loga mascarado) | smtp | memoria (testes)
+    email_backend: Literal['console', 'smtp', 'memoria'] = 'console'
+    email_remetente: str = 'nao-responda@localhost'
+    smtp_host: str = ''
+    smtp_porta: int = 587
+    smtp_usuario: str = ''
+    smtp_senha: str = ''
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / '.env',
