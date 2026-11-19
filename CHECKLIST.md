@@ -10,7 +10,7 @@ Sistema para empresas: um usuário **cria uma empresa** (vira dono) ou **entra n
 4. **Agentes via chatbot**: o usuário escreve em linguagem natural e o agente executa ações no sistema (LangChain/LlamaIndex).
 5. **Frontend em Angular**, bem acabado (consome esta API; o CORS já está liberado para `localhost:4200`).
 
-Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3), pandas.
+Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`migracoes/`), Pydantic v2, PostgreSQL (psycopg 3), pandas, Ollama.
 
 ## 📍 Onde paramos
 
@@ -29,6 +29,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **limpeza agendada**: tarefa em segundo plano no lifespan (sem dependência nova), roda numa thread do pool a cada 24 h. Com vários workers cada um roda a sua, o que é inofensivo (DELETE idempotente).
 - **Pendente (decisão do usuário)**: (a) adotar migrações em SQL puro versionadas + prefixo `/api/v1` já, ou (b) só antes de produção; escopo e retenção da **auditoria**. A anonimização da conta e a auditoria esperam essa decisão (mudam o banco).
 - **2026-11-18**: usuário aprovou as recomendações: **`/api/v1`** (feito), migrações SQL versionadas, anonimização da conta, auditoria (escritas + exportações + eventos de login; retenção de 1 ano para acesso e 5 anos para o resto) e cancelamento de venda pelo chat com motivo.
+- **2026-11-18**: **migrações SQL versionadas** no lugar do `create_all`: `V001__estrutura_inicial.sql` (retrato dos models), executor com checksum, trava contra execução simultânea e transação por arquivo. Teste de paridade migrações × models. Banco `gestao` (vazio) recriado pelas migrações.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -87,7 +88,6 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [ ] Margem por produto usa o faturamento **bruto** (o desconto é da venda inteira, não de cada item). Se precisar: ratear o desconto entre os itens
 - [ ] Empresa: desativar/excluir; transferência de dono
 - [ ] Busca de produto por nome usa `LIKE '%x%'` (não usa índice). Se o volume crescer: `pg_trgm`
-- [ ] Rever a decisão "sem Alembic" antes de ir para produção com dados reais
 - [ ] Ollama: manter atualizado (`winget upgrade Ollama.Ollama`); **nunca expor a porta 11434** (sem `OLLAMA_HOST=0.0.0.0`). Em produção, rodar no mesmo servidor da API, preso ao localhost ou numa rede privada. A API do Ollama não tem autenticação (por projeto); as CVEs de 2026 (ex.: CVE-2026-7482 "Bleeding Llama") foram exploradas em servidores expostos
 
 ## 🧵 Trilha de ideias
@@ -155,4 +155,13 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Cadastro de clientes fica **manual** (mais atenção, menos risco). Cancelar venda pelo chat: sim, com **motivo obrigatório** e confirmação.
   - **Auditoria**: registrar escritas (criar/editar/excluir, vendas, estoque, cargos, convites, conta). GETs não, **exceto**: exportações (Excel e "meus dados": saída de dado pessoal em massa) e eventos de segurança (login, falha de login, reuso de token). O log também é dado pessoal: guardar quem/o quê/quando/origem/campos alterados (CPF/email/telefone/senha só como "alterado"); retenção proposta: 1 ano (acesso) e 5 anos (vendas, possível exigência fiscal); só o dono consulta; ninguém edita/apaga.
   - **Migrações**: o usuário propôs SQL puro versionado (estrutura e dados) e versionamento da API (v1 → v2 com período de transição). Proposta: arquivos `V001__x.sql` + tabela `schema_versao` (estilo Flyway), ORM só para as consultas, teste que compara o banco migrado com os models; `/api/v1` agora; mudanças incompatíveis no padrão **expandir e contrair** (a v1 recebe os cabeçalhos `Deprecation`/`Sunset` até sair).
+- **2026-11-18**: migrações. Decisões:
+  - Executor próprio (~100 linhas) em vez de Flyway/Alembic: SQL puro como o usuário pediu, sem dependência nova.
+  - Checksum SHA-256 com quebras de linha normalizadas (o git no Windows troca `
+` por `
+`).
+  - `pg_advisory_lock`: dois servidores subindo juntos não migram ao mesmo tempo.
+  - Cada arquivo roda numa transação (o Postgres desfaz até DDL): uma falha não deixa o banco pela metade.
+  - Recusa banco "criado sem migrações" (tem tabelas e não tem `schema_versao`) em vez de tentar adivinhar o estado.
+  - O `V001` foi gerado uma vez pelo DDL dos models. A paridade é garantida por teste: cria um banco pelos models, outro pelas migrações, e compara colunas, tipos, nulos, índices, unicidades e FKs.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

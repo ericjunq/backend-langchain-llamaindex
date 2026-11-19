@@ -1,6 +1,14 @@
 ## Stack
 
-Python + FastAPI + SQLAlchemy 2 + Pydantic v2 + PostgreSQL. Relatórios com pandas; fase de IA com LangChain/LlamaIndex. Estrutura do banco definida só pelos models do SQLAlchemy (`Base.metadata.create_all`), **sem migrações (sem Alembic)**. Como `create_all` não altera tabelas existentes, toda mudança de model exige recriar o banco (`drop_all` + `create_all`). Isso apaga os dados e por isso exige confirmação explícita do usuário.
+Python + FastAPI + SQLAlchemy 2 + Pydantic v2 + PostgreSQL. Relatórios com pandas; IA local com Ollama + langchain-core/langchain-ollama.
+
+**Banco: migrações versionadas em SQL puro** (pasta `migracoes/`, arquivos `VNNN__descricao.sql`, controle na tabela `schema_versao`, aplicadas ao subir a API ou com `python -m migracoes`). O ORM do SQLAlchemy é usado só para as consultas.
+- Toda mudança de estrutura ou de dados = **novo arquivo** `VNNN`. **Nunca editar uma migração já aplicada** (o checksum recusa).
+- Mudou um model → criar a migração correspondente. O teste `test_migracoes_produzem_exatamente_os_models` falha se os dois divergirem.
+- Mudança incompatível com a API em uso → **expandir e contrair**: a migração adiciona o novo sem remover o velho; outra remove depois que a versão antiga da API sair.
+- Apagar ou recriar banco, ou migração que remove dados, continua exigindo confirmação explícita do usuário.
+
+**API versionada:** tudo sob `/api/v1`. Mudança incompatível → `/api/v2` só para as rotas afetadas; a v1 continua no ar com os cabeçalhos `Deprecation`/`Sunset` até a data de desligamento.
 
 ## Prioridades permanentes (valem para toda decisão, em qualquer parte do sistema)
 
@@ -22,7 +30,7 @@ Python + FastAPI + SQLAlchemy 2 + Pydantic v2 + PostgreSQL. Relatórios com pand
 ### Comunicação
 
 - **Respostas curtas e diretas** por padrão.
-- **Explicar mais** quando o usuário pedir detalhes, quando perceber que ele não entendeu, em debates de ideias (planejamento, arquitetura, brainstorming) e quando houver **risco**: dados importantes (`migrate:fresh`, exclusões), decisões importantes de arquitetura ou API, ações difíceis de reverter. Nesses casos, explicar o porquê, as consequências e as alternativas.
+- **Explicar mais** quando o usuário pedir detalhes, quando perceber que ele não entendeu, em debates de ideias (planejamento, arquitetura, brainstorming) e quando houver **risco**: dados importantes (recriar o banco, migrações que apagam dados, exclusões), decisões importantes de arquitetura ou API, ações difíceis de reverter. Nesses casos, explicar o porquê, as consequências e as alternativas.
 - Escrever em português.
 
 ### Fluxo de trabalho

@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, FastAPI
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, LocalSession
+from database import engine, LocalSession
+from migracoes import aplicar as aplicar_migracoes
 from security.settings import settings
 import models  # registra todos os models no Base
 from models import RefreshToken, Convite, AcaoPendente
@@ -43,8 +44,9 @@ async def rotina_limpeza(intervalo_horas: float) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Sem migrações: a estrutura vem dos models. Mudou model → recriar o banco (ver CLAUDE.md).
-    Base.metadata.create_all(bind=engine)
+    # Estrutura do banco: migrações SQL versionadas (pasta migracoes/), não create_all.
+    if settings.migracoes_automaticas:
+        aplicar_migracoes(engine)
     limpar_dados_expirados()
     tarefa = asyncio.create_task(rotina_limpeza(settings.limpeza_intervalo_horas))
     yield

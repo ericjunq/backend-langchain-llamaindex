@@ -40,7 +40,7 @@ TABELAS = ', '.join(t.name for t in database.Base.metadata.sorted_tables)
 
 @pytest.fixture(scope='session')
 def client():
-    # O lifespan do app roda create_all no banco de teste.
+    # O lifespan do app aplica as migrações (pasta migracoes/) no banco de teste.
     # base_url com /api/v1: os testes usam caminhos relativos ('/produtos') e batem na versão atual.
     with TestClient(main.app, base_url=f'http://testserver{main.API_V1}') as c:
         yield c
