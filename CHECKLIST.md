@@ -34,6 +34,8 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **2026-11-18**: **auditoria** (`V003`, `services/auditoria_service.py`, `GET /auditoria`): escritas de produtos, estoque, clientes, vendas (cancelamento com motivo), empresa, cargos, convites e conta; exportações; login/falha/logout geral/reuso de token. Registro na mesma transação da operação. Origem `api`/`chat`. 132 testes.
 - **2026-11-18**: **cancelar venda pelo chat** (`cancelar_venda`): motivo **obrigatório** (3–60 caracteres; o modelo pergunta se faltar), mesmas regras da API já na preparação (funcionário só as próprias, outra empresa = não encontrada, já cancelada = erro), prévia com itens/valor/data, execução só na confirmação, auditoria com origem `chat`. Cadastro de clientes pelo chat: **não** (decisão do usuário: manual, mais atenção).
 - **2026-11-18**: **frontend Angular** decidido: pasta irmã `../frontend-angular` (git próprio), **Tailwind** sob medida, sessão com **refresh token em cookie httpOnly**. Backend ajustado: login/refresh devolvem só o access token; o refresh vai no cookie `httpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`.
+- **2026-11-18**: **frontend criado** em `../frontend-angular` (git próprio): **Angular 22.3** (atualizado do 21 com o projeto ainda vazio: corrigiu as vulnerabilidades das ferramentas, `npm audit` = 0), Tailwind 4, Vitest, zoneless. Etapa F1 pronta: layout com menu lateral responsivo por cargo, lazy loading, título por página, 404, pt-BR. ~78 kB no carregamento inicial. Rodar: `npm start` no frontend + `uvicorn main:app --reload` no backend → http://localhost:4200.
+  - Próximas etapas do frontend: F2 autenticação → F3 painel → F4 produtos → F5 clientes → F6 vendas → F7 equipe → F8 relatórios/previsões/auditoria → F9 assistente → F10 minha conta.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -186,4 +188,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Mudança incompatível na v1, mas **a v1 ainda não tinha consumidores** → ajustada sem criar v2. A partir do frontend publicado, mudanças assim seguem a regra v1/v2.
   - Logout é idempotente (sem cookie ou com cookie inválido, só apaga o cookie).
   - `COOKIE_SECURE=false` só nos testes automatizados (cliente http://).
+- **2026-11-18**: frontend. Decisões:
+  - Ícones: pacote `lucide` (ISC, sem framework) + componente próprio, porque o `lucide-angular` ainda não declara suporte ao Angular 22 (forçar com `--legacy-peer-deps` seria arriscado).
+  - npm 11 bloqueia scripts de instalação por padrão (esbuild, lmdb…): mantidos **bloqueados**, já que o build funciona sem eles (menos superfície para pacote malicioso).
+  - O frontend tem CLAUDE.md próprio, mas a trilha de ideias do projeto inteiro continua **neste** CHECKLIST.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
