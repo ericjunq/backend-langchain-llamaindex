@@ -199,4 +199,5 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Renovação **agendada** 1 min antes do vencimento (o usuário não vê 401).
   - `?voltar=` só com caminho interno (`/x`, nunca `//x` ou `https://`): evita open redirect.
   - Código do convite colado no formulário (vai no corpo); quando a tela de convites existir (F7), o link usará `#fragmento` (não vai ao servidor nem aos logs).
+- **2026-11-18**: o usuário **não quer coautoria do Claude** nos commits. Histórico reescrito nos dois repositórios (só a linha `Co-Authored-By` removida; autor, datas e código iguais; backup local no branch `backup-antes-de-reescrever`) e push forçado no backend. Regra no CLAUDE.md e na memória.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
