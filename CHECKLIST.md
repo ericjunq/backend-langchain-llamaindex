@@ -87,7 +87,7 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [x] Direitos do titular: exportar "meus dados" (`GET /usuarios/me/dados`)
 - [x] Direitos do titular: anonimizar a própria conta (`POST /usuarios/me/anonimizacao`)
 - [ ] Chat: o qwen3:8b às vezes diz "a venda foi registrada com sucesso" antes da confirmação (mesmo pedindo para confirmar em seguida). O dado está seguro (nada executa sem confirmar), mas o texto confunde. Ideia: o frontend mostrar o cartão da ação pendente com destaque, e/ou trocar o texto da resposta quando houver `acoes_pendentes`
-- [ ] Ollama: em 2026-11-18 o servidor parou e o app da bandeja não conseguiu reiniciá-lo ("server not ready after retries"); resolvido iniciando `ollama serve` manualmente. Se repetir: reiniciar o app/PC ou atualizar (`winget upgrade Ollama.Ollama`). A API responde 503 "Assistente indisponível" quando isso acontece (comportamento esperado)
+- [x] Ollama parou em 2026-11-18 porque o app foi **fechado manualmente** pelo usuário (não foi falha). Reiniciado com `ollama serve`, preso ao 127.0.0.1. Sem o Ollama, `POST /chat` responde 503 "Assistente indisponível" (esperado)
 - [ ] Transferência de dono (hoje o dono não pode anonimizar a conta enquanto for dono)
 - [x] Limite de login: 5 falhas em 15 min por (IP + email) → 429 com Retry-After
 - [ ] Limite de login está em memória (por processo): com vários workers/servidores, trocar por Redis; atrás de proxy, `uvicorn --proxy-headers`
