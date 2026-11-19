@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, LocalSession
@@ -60,13 +60,11 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-app.include_router(auth_router)
-app.include_router(usuario_router)
-app.include_router(convite_router)
-app.include_router(cliente_router)
-app.include_router(empresa_router)
-app.include_router(produto_router)
-app.include_router(venda_router)
-app.include_router(relatorio_router)
-app.include_router(previsao_router)
-app.include_router(chat_router)
+# Versionamento da API: tudo sob /api/v1. Mudança incompatível → nova versão (/api/v2) só para as
+# rotas afetadas; a v1 continua no ar com os cabeçalhos Deprecation/Sunset até a data de desligamento.
+API_V1 = '/api/v1'
+api_v1 = APIRouter(prefix=API_V1)
+for router in (auth_router, usuario_router, convite_router, cliente_router, empresa_router, produto_router,
+               venda_router, relatorio_router, previsao_router, chat_router):
+    api_v1.include_router(router)
+app.include_router(api_v1)

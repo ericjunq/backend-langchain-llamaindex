@@ -13,7 +13,7 @@ from uuid import uuid4
 
 password_hash = PasswordHash.recommended()
 
-usuario_scheme = OAuth2PasswordBearer(tokenUrl='/auth/login')
+usuario_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/auth/login')
 
 # Hash usado no login quando o email não existe: assim a resposta leva o mesmo
 # tempo nos dois casos e não dá para descobrir quais emails estão cadastrados (LGPD).

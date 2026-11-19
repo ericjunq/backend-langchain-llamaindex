@@ -28,6 +28,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **limite de tentativas de login** (`security/limite_tentativas.py`): 5 falhas em 15 min por **IP + email** → 429. Só pelo email, um atacante bloquearia contas alheias de propósito; só pelo IP, testaria muitas contas. Checado antes de consultar o banco (barra a força bruta sem custo).
 - **2026-11-18**: **limpeza agendada**: tarefa em segundo plano no lifespan (sem dependência nova), roda numa thread do pool a cada 24 h. Com vários workers cada um roda a sua, o que é inofensivo (DELETE idempotente).
 - **Pendente (decisão do usuário)**: (a) adotar migrações em SQL puro versionadas + prefixo `/api/v1` já, ou (b) só antes de produção; escopo e retenção da **auditoria**. A anonimização da conta e a auditoria esperam essa decisão (mudam o banco).
+- **2026-11-18**: usuário aprovou as recomendações: **`/api/v1`** (feito), migrações SQL versionadas, anonimização da conta, auditoria (escritas + exportações + eventos de login; retenção de 1 ano para acesso e 5 anos para o resto) e cancelamento de venda pelo chat com motivo.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -36,6 +37,8 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
   5. Previsão v2 (se os dados justificarem): backtest da v1 (erro médio por produto) antes de trocar de modelo; previsão de preço/margem.
 
 ## 🗺️ Mapa de rotas (REST)
+
+**Todas as rotas ficam sob `/api/v1`** (ex.: `POST /api/v1/auth/login`). A tabela abaixo omite o prefixo.
 
 | Recurso | Rotas |
 |---|---|

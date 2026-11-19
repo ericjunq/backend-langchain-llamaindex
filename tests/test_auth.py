@@ -116,3 +116,11 @@ def test_login_certo_zera_as_falhas(client):
     assert login(client, conta.email).status_code == 200
     for _ in range(4):
         assert login(client, conta.email, 'errada').status_code == 401  # contagem recomeçou
+
+
+def test_rotas_estao_versionadas_em_api_v1(client):
+    conta = nova_conta(client)
+    assert client.get('http://testserver/api/v1/usuarios/me', headers=conta.headers).status_code == 200
+    assert client.get('http://testserver/usuarios/me', headers=conta.headers).status_code == 404  # sem versão
+    assert client.get('http://testserver/openapi.json').json()['components']['securitySchemes'][
+        'OAuth2PasswordBearer']['flows']['password']['tokenUrl'] == '/api/v1/auth/login'
