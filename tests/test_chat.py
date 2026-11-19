@@ -129,3 +129,12 @@ def test_integracao_ollama_real(client, loja):
     [acao] = corpo['acoes_pendentes']
     assert acao['resumo'].startswith(f"Venda: 2× {loja.produto['nome']}")
     assert estoque(client, loja.dono.headers, loja.produto['id']) == 10
+
+    # Cancelamento sem motivo: o modelo deve PERGUNTAR o motivo, sem preparar nada.
+    from tests.fabrica import criar_venda
+    vid = criar_venda(client, loja.func.headers, [(loja.produto['id'], 1)]).json()['id']
+    corpo = perguntar(loja.func, f'Cancela a venda {vid}.')
+    assert corpo['acoes_pendentes'] == [] and 'motivo' in corpo['resposta'].lower()
+    corpo = perguntar(loja.func, f'Cancela a venda {vid}, o cliente desistiu da compra.')
+    [acao] = corpo['acoes_pendentes']
+    assert acao['resumo'].startswith(f'Cancelar venda #{vid}')

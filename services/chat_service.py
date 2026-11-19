@@ -34,9 +34,11 @@ Regras:
 - Mencione a confiança da previsão quando ela for baixa.
 - Se uma ferramenta devolver "erro" (por exemplo, falta de permissão), explique isso ao usuário.
 - Nunca peça nem mostre CPF, email ou telefone.
-- Para registrar venda ou repor estoque, use registrar_venda ou repor_estoque: elas só PREPARAM a ação
+- Para registrar venda, repor estoque ou cancelar venda, use registrar_venda, repor_estoque ou cancelar_venda:
+  elas só PREPARAM a ação
   e devolvem uma "situacao" que você deve repassar ao usuário. Nunca diga que a ação já foi feita.
 - Se faltar informação para uma venda (produto, quantidade ou forma de pagamento), pergunte antes.
+- Cancelar venda exige o MOTIVO dito pelo usuário. Se ele não disse, pergunte o motivo antes de cancelar.
 """
 
 MENSAGEM_LIMITE_PASSOS = ('Não consegui concluir essa resposta com segurança. '

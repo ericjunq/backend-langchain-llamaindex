@@ -148,3 +148,50 @@ def test_produto_por_nome_ambiguo_ou_aproximado(client, loja, modelo):
     assert 'Mais de um produto' in ambiguo['erro'] and 'Café Especial' in ambiguo['erro'] and 'Café Comum' in ambiguo['erro']
     assert 'Café Comum' in resolvido['resumo']
     assert len(r.json()['acoes_pendentes']) == 1
+
+
+def _venda(client, conta, loja, qtd=2):
+    from tests.fabrica import criar_venda
+    return criar_venda(client, conta.headers, [(loja.produto['id'], qtd)]).json()['id']
+
+
+def test_cancelar_venda_pelo_chat_com_motivo(client, loja, modelo):
+    vid = _venda(client, loja.func, loja)
+    assert estoque(client, loja.dono.headers, loja.produto['id']) == 8
+    modelo(chamar('cancelar_venda', venda_id=vid, motivo='Cliente desistiu'), AIMessage('Confirme o cancelamento.'))
+
+    [acao] = client.post('/chat', headers=loja.func.headers, json={'mensagem': f'cancela a venda {vid}'}).json()['acoes_pendentes']
+    assert acao['resumo'].startswith(f"Cancelar venda #{vid} (2× {loja.produto['nome']} · R$ 51,00 · ")
+    assert acao['resumo'].endswith('motivo: Cliente desistiu · o estoque será devolvido')
+    assert client.get(f'/vendas/{vid}', headers=loja.func.headers).json()['status'] == 'concluida'  # nada ainda
+
+    r = client.post(f"/chat/acoes/{acao['id']}/confirmar", headers=loja.func.headers)
+    assert r.status_code == 200
+    assert (r.json()['resultado']['status'], r.json()['resultado']['motivo_cancelamento']) == ('cancelada', 'Cliente desistiu')
+    assert estoque(client, loja.dono.headers, loja.produto['id']) == 10
+    [evento] = client.get('/auditoria', headers=loja.dono.headers, params={'acao': 'venda.cancelada'}).json()
+    assert evento['origem'] == 'chat' and evento['detalhes']['motivo'] == 'Cliente desistiu'
+
+
+def test_cancelar_pelo_chat_exige_motivo_e_respeita_regras(client, loja, outra_loja, modelo):
+    vid = _venda(client, loja.dono, loja)
+    colega_vid = _venda(client, loja.func, loja)
+    m = modelo(
+        chamar('cancelar_venda', venda_id=colega_vid),                   # sem motivo
+        chamar('cancelar_venda', venda_id=colega_vid, motivo='x'),       # motivo curto demais
+        chamar('cancelar_venda', venda_id=vid, motivo='Erro de digitação'),  # venda de outro: funcionário não pode
+        AIMessage('Não deu.'))
+    r = client.post('/chat', headers=loja.func.headers, json={'mensagem': 'cancela'})
+    assert r.json()['acoes_pendentes'] == []
+    sem_motivo, curto, de_outro = m.saidas_ferramentas()
+    assert 'erro' in sem_motivo and 'erro' in curto
+    assert de_outro == {'erro': 'Você só pode ver suas próprias vendas'}
+
+    client.post(f'/vendas/{vid}/cancelar', headers=loja.dono.headers, json={'motivo_cancelamento': 'Teste'})
+    m = modelo(chamar('cancelar_venda', venda_id=vid, motivo='De novo'), AIMessage('ok'))
+    client.post('/chat', headers=loja.dono.headers, json={'mensagem': 'cancela'})
+    assert m.saidas_ferramentas() == [{'erro': f'A venda {vid} já está cancelada'}]
+
+    m = modelo(chamar('cancelar_venda', venda_id=colega_vid, motivo='Invasão'), AIMessage('ok'))
+    client.post('/chat', headers=outra_loja.dono.headers, json={'mensagem': 'cancela'})
+    assert m.saidas_ferramentas() == [{'erro': 'Venda não encontrada'}]

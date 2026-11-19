@@ -233,6 +233,11 @@ class ArgsReporEstoque(BaseModel):
     produto: str = Field(description='Nome (ou código PROD-...) do produto, como o usuário falou')
     quantidade: int = Field(gt=0, description='Unidades que chegaram (somam ao estoque)')
 
+class ArgsCancelarVenda(BaseModel):
+    venda_id: int = Field(description='Número da venda (use ultimas_vendas para encontrar)')
+    motivo: str = Field(min_length=3, max_length=60,
+                        description='Motivo do cancelamento, dito pelo usuário. OBRIGATÓRIO: se ele não disse, pergunte.')
+
 
 def _reais(valor) -> str:
     return f'R$ {float(valor):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
@@ -291,6 +296,20 @@ def criar_ferramentas_escrita(db: Session, usuario: Usuarios, pendentes: list) -
                   f'(estoque {alvo.quantidade} → {alvo.quantidade + quantidade})')
         return _pendente(acao_service.REPOR_ESTOQUE, {'produto_id': alvo.id, 'quantidade': quantidade}, resumo)
 
+    def cancelar_venda(venda_id: int, motivo: str) -> str:
+        from models.produto_model import Produtos
+        from utils.enums import StatusVenda
+        # Mesmas regras da API (empresa, funcionário só as próprias) já na preparação.
+        venda = venda_service.obter_venda(venda_id, db, usuario)
+        if venda.status == StatusVenda.cancelada:
+            return compactar({'erro': f'A venda {venda_id} já está cancelada'})
+        nomes = dict(db.query(Produtos.id, Produtos.nome)
+                     .filter(Produtos.id.in_([i.produto_id for i in venda.itens])).all())
+        itens = ', '.join(f'{i.quantidade}× {nomes.get(i.produto_id, "?")}' for i in venda.itens)
+        resumo = (f'Cancelar venda #{venda.id} ({itens} · {_reais(venda.valor_final)} · '
+                  f'{venda.created_at:%d/%m/%Y}) · motivo: {motivo.strip()} · o estoque será devolvido')
+        return _pendente(acao_service.CANCELAR_VENDA, {'venda_id': venda.id, 'motivo': motivo.strip()}, resumo)
+
     return [
         StructuredTool.from_function(
             func=registrar_venda, name='registrar_venda', args_schema=ArgsRegistrarVenda,
@@ -299,4 +318,8 @@ def criar_ferramentas_escrita(db: Session, usuario: Usuarios, pendentes: list) -
         StructuredTool.from_function(
             func=repor_estoque, name='repor_estoque', args_schema=ArgsReporEstoque,
             description='PREPARA uma entrada de estoque para o usuário confirmar (não executa).'),
+        StructuredTool.from_function(
+            func=cancelar_venda, name='cancelar_venda', args_schema=ArgsCancelarVenda,
+            description='PREPARA o cancelamento de uma venda para o usuário confirmar (não executa). '
+                        'Exige o motivo dito pelo usuário; se faltar, pergunte antes de chamar.'),
     ]

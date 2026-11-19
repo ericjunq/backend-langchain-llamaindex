@@ -10,13 +10,14 @@ from sqlalchemy.orm import Session
 from models.acao_pendente import AcaoPendente
 from models.usuario_model import Usuarios
 from schemas.produto_schema import ProdutoReposicaoEstoque, ProdutoResponse
-from schemas.venda_schema import VendaResponse, VendaSchema
+from schemas.venda_schema import CancelarVenda, VendaResponse, VendaSchema
 import services.produto_service as produto_service
 import services.venda_service as venda_service
 import services.auditoria_service as auditoria
 
 REGISTRAR_VENDA = 'registrar_venda'
 REPOR_ESTOQUE = 'repor_estoque'
+CANCELAR_VENDA = 'cancelar_venda'
 
 
 def criar(db: Session, usuario: Usuarios, tipo: str, dados: dict, resumo: str) -> AcaoPendente:
@@ -61,6 +62,10 @@ def confirmar(db: Session, usuario: Usuarios, id: str) -> dict:
             produto = produto_service.repor_estoque(
                 dados['produto_id'], ProdutoReposicaoEstoque(quantidade=dados['quantidade']), db, usuario)
             resultado = ProdutoResponse.model_validate(produto, from_attributes=True)
+        elif tipo == CANCELAR_VENDA:
+            venda = venda_service.cancelar_venda(
+                dados['venda_id'], CancelarVenda(motivo_cancelamento=dados['motivo']), db, usuario)
+            resultado = VendaResponse.model_validate(venda, from_attributes=True)
         else:
             raise HTTPException(status_code=400, detail='Tipo de ação desconhecido')
 
