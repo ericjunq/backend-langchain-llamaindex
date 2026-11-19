@@ -22,6 +22,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **IA de previsão v1** (estatística, sem LLM): demanda por produto e sugestão de reposição. 80 testes passando.
 - **2026-11-18**: Ollama 0.40.16 instalado + modelo `qwen3:8b` (5,2 GB, RTX 3050 6 GB). **Chat com 7 ferramentas de leitura** (`POST /chat`). Testado com o modelo real: ~9 s por resposta com o modelo já carregado (~19 s na primeira). 91 testes + 1 de integração (`OLLAMA_TESTE=1 python -m pytest -k integracao -s`).
 - **2026-11-18**: **ações com confirmação no chat**: `registrar_venda` e `repor_estoque` só preparam (tabela `acoes_pendentes`, 10 min); o usuário confirma em `POST /chat/acoes/{id}/confirmar`. Ferramentas recebem produto/cliente **pelo nome**. Testado com o modelo real (~8 s por resposta). 102 testes + integração.
+- **2026-11-18**: verificação de segurança do Ollama. Instalador oficial (GitHub, hash conferido pelo winget), assinatura **Ollama Inc./DigiCert** válida, Windows Defender sem ameaças (programa e modelo). Versão 0.40.16 sem as CVEs conhecidas de 2026. Escuta só em `127.0.0.1` + **regra no Firewall do Windows bloqueando a entrada na 11434** (acesso local segue funcionando).
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -77,6 +78,7 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [ ] Empresa: desativar/excluir; transferência de dono
 - [ ] Busca de produto por nome usa `LIKE '%x%'` (não usa índice). Se o volume crescer: `pg_trgm`
 - [ ] Rever a decisão "sem Alembic" antes de ir para produção com dados reais
+- [ ] Ollama: manter atualizado (`winget upgrade Ollama.Ollama`); **nunca expor a porta 11434** (sem `OLLAMA_HOST=0.0.0.0`). Em produção, rodar no mesmo servidor da API, preso ao localhost ou numa rede privada. A API do Ollama não tem autenticação (por projeto); as CVEs de 2026 (ex.: CVE-2026-7482 "Bleeding Llama") foram exploradas em servidores expostos
 
 ## 🧵 Trilha de ideias
 
@@ -138,4 +140,5 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - As permissões são checadas de novo na confirmação (quem perdeu o cargo no meio recebe 403).
   - **Lição do teste real nº 2:** o qwen3:8b inventou um `produto_id` em vez de buscar antes. As ferramentas passaram a receber **nome (ou código) do produto e nome do cliente** e resolvem por dentro. Nome ambíguo → erro com as opções, para o modelo perguntar ao usuário.
   - **Lição nº 3:** citar o botão "Confirmar" no prompt fazia o modelo mencioná-lo até em consultas. A instrução de confirmação só vem na resposta da ferramenta de escrita (`situacao`).
+- **2026-11-18**: segurança do Ollama. A falta de senha na API não é um bug "a corrigir": é de projeto. A proteção é a configuração (escutar só no localhost) + o firewall como segunda camada. O Angular nunca fala direto com o Ollama, só com o backend.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
