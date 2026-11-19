@@ -21,6 +21,7 @@ from routers.relatorio_routers import relatorio_router
 from routers.previsao_routers import previsao_router
 from routers.chat_routers import chat_router
 from routers.auditoria_routers import auditoria_router
+from routers.painel_routers import painel_router
 import services.auditoria_service as auditoria
 
 def limpar_dados_expirados() -> None:
@@ -71,6 +72,6 @@ app.add_middleware(
 # rotas afetadas; a v1 continua no ar com os cabeçalhos Deprecation/Sunset até a data de desligamento.
 api_v1 = APIRouter(prefix=API_V1)
 for router in (auth_router, usuario_router, convite_router, cliente_router, empresa_router, produto_router,
-               venda_router, relatorio_router, previsao_router, chat_router, auditoria_router):
+               venda_router, relatorio_router, previsao_router, chat_router, auditoria_router, painel_router):
     api_v1.include_router(router)
 app.include_router(api_v1)

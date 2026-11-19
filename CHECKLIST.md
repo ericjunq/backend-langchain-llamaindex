@@ -37,6 +37,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **2026-11-18**: **frontend criado** em `../frontend-angular` (git próprio): **Angular 22.3** (atualizado do 21 com o projeto ainda vazio: corrigiu as vulnerabilidades das ferramentas, `npm audit` = 0), Tailwind 4, Vitest, zoneless. Etapa F1 pronta: layout com menu lateral responsivo por cargo, lazy loading, título por página, 404, pt-BR. ~78 kB no carregamento inicial. Rodar: `npm start` no frontend + `uvicorn main:app --reload` no backend → http://localhost:4200.
 - **2026-11-18**: **F2 autenticação** pronta no frontend: entrar, criar conta (com aviso de finalidade dos dados), bem-vindo (criar empresa / aceitar convite), sessão em memória + cookie httpOnly, renovação automática e única, guardas por login/empresa/cargo. 36 testes no frontend; fluxo verificado de ponta a ponta pelo proxy (banco temporário `gestao_e2e`, apagado).
   - Próximas etapas do frontend: ~~F2 autenticação~~ ✅ → F3 painel → F4 produtos → F5 clientes → F6 vendas → F7 equipe → F8 relatórios/previsões/auditoria → F9 assistente → F10 minha conta.
+- **2026-11-18**: backend: **`GET /painel`** para a etapa F3 do frontend (1 chamada; 2 consultas para todos, +5 para gestores). Comparação de faturamento com o **mesmo período** do mês anterior (o mês atual está incompleto; comparar com o mês inteiro sempre pareceria queda).
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -58,6 +59,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
 | Previsões (dono e admin) | `GET /previsoes/produtos/{id}?dias=30` · `GET /previsoes/reposicao?prazo_entrega=7&dias_cobertura=30&apenas_necessarios=true` |
 | Assistente | `POST /chat` (`{"mensagem", "historico": [{"papel": "usuario"/"assistente", "conteudo"}]}` → `{"resposta", "ferramentas_usadas", "acoes_pendentes"}`) · `POST /chat/acoes/{id}/confirmar` · `DELETE /chat/acoes/{id}` (cancelar) |
+| Painel | `GET /painel` (minhas vendas hoje/mês e últimas; gestor vê também faturamento × mesmo período do mês anterior, vendas por dia em 30 dias, estoque abaixo do mínimo e reposição) |
 | Auditoria (só dono) | `GET /auditoria?categoria=&acao=&entidade=&entidade_id=&usuario_id=&origem=&periodo=` |
 | Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
