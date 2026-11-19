@@ -25,6 +25,7 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: verificação de segurança do Ollama. Instalador oficial (GitHub, hash conferido pelo winget), assinatura **Ollama Inc./DigiCert** válida, Windows Defender sem ameaças (programa e modelo). Versão 0.40.16 sem as CVEs conhecidas de 2026. Escuta só em `127.0.0.1` + **regra no Firewall do Windows bloqueando a entrada na 11434** (acesso local segue funcionando).
 - **2026-11-18**: **emails de aviso** (`services/email_service.py`): troca de senha, troca de email (para os dois endereços) e alerta de sessão comprometida. Backends `console` (dev, só loga o destinatário mascarado), `smtp` (em segundo plano, STARTTLS) e `memoria` (testes).
 - **2026-11-18**: **exportar meus dados** (`GET /usuarios/me/dados`, sem cache): perfil completo, empresa, sessões ativas e resumo de atividade. Não inclui hashes nem dados de clientes (pertencem a eles).
+- **2026-11-18**: **limite de tentativas de login** (`security/limite_tentativas.py`): 5 falhas em 15 min por **IP + email** → 429. Só pelo email, um atacante bloquearia contas alheias de propósito; só pelo IP, testaria muitas contas. Checado antes de consultar o banco (barra a força bruta sem custo).
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -75,7 +76,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 - [x] Email de aviso: troca de senha, troca de email (antigo e novo) e sessão comprometida. Backend `console` em dev; SMTP via `.env`
 - [x] Direitos do titular: exportar "meus dados" (`GET /usuarios/me/dados`)
 - [ ] Direitos do titular: anonimizar a própria conta (aguarda a decisão sobre migrações: muda o model `usuarios`)
-- [ ] Rate limit no login (força bruta)
+- [x] Limite de login: 5 falhas em 15 min por (IP + email) → 429 com Retry-After
+- [ ] Limite de login está em memória (por processo): com vários workers/servidores, trocar por Redis; atrás de proxy, `uvicorn --proxy-headers`
 - [x] Relatório de produtos
 - [ ] Margem por produto usa o faturamento **bruto** (o desconto é da venda inteira, não de cada item). Se precisar: ratear o desconto entre os itens
 - [ ] Empresa: desativar/excluir; transferência de dono

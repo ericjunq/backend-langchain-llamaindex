@@ -96,3 +96,23 @@ def test_editar_email_para_um_ja_usado(client):
     a, b = nova_conta(client), nova_conta(client)
     r = client.patch('/usuarios/me', headers=a.headers, json={'email': b.email, 'senha_atual': SENHA})
     assert r.status_code == 409
+
+
+def test_limite_de_tentativas_de_login(client):
+    conta = nova_conta(client)
+    for _ in range(5):
+        assert login(client, conta.email, 'errada').status_code == 401
+    bloqueado = login(client, conta.email, SENHA)  # nem a senha certa passa enquanto bloqueado
+    assert bloqueado.status_code == 429 and int(bloqueado.headers['retry-after']) > 0
+
+    outra = nova_conta(client)
+    assert login(client, outra.email).status_code == 200  # o bloqueio é por (IP + email), não geral
+
+
+def test_login_certo_zera_as_falhas(client):
+    conta = nova_conta(client)
+    for _ in range(4):
+        login(client, conta.email, 'errada')
+    assert login(client, conta.email).status_code == 200
+    for _ in range(4):
+        assert login(client, conta.email, 'errada').status_code == 401  # contagem recomeçou

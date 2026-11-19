@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     ollama_modelo: str = 'qwen3:8b'
     chat_max_passos: int = 5        # chamadas de ferramenta por mensagem (limita tempo e loops)
     chat_timeout_segundos: int = 120
+    # Limite de login: falhas por (IP + email) dentro da janela → 429
+    login_max_falhas: int = 5
+    login_janela_minutos: int = 15
     # Emails de aviso: console (dev, só loga mascarado) | smtp | memoria (testes)
     email_backend: Literal['console', 'smtp', 'memoria'] = 'console'
     email_remetente: str = 'nao-responda@localhost'

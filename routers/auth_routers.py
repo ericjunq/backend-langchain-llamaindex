@@ -1,4 +1,4 @@
-from fastapi import Depends, APIRouter
+from fastapi import Depends, APIRouter, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from schemas.usuario_schema import RefreshRequest, TokenResponse
@@ -11,8 +11,9 @@ import services.refresh_token_service as token_service
 auth_router = APIRouter(prefix='/auth', tags=['auth'])
 
 @auth_router.post('/login', response_model=TokenResponse)
-def login(dados: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    return usuario_service.login(email=dados.username, senha=dados.password, db=db)
+def login(request: Request, dados: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else 'desconhecido'
+    return usuario_service.login(email=dados.username, senha=dados.password, db=db, ip=ip)
 
 @auth_router.post('/refresh', response_model=TokenResponse)
 def refresh(dados: RefreshRequest, db: Session = Depends(get_db)):

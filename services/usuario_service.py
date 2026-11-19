@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from security.security import verificar_senha, criptografar_senha, HASH_FALSO
 from services.refresh_token_service import emitir_tokens, revogar_todos
 import services.email_service as email_service
+from security.limite_tentativas import limite_login
 from utils.enums import CargosEnum
 from datetime import datetime, timezone
 
@@ -42,15 +43,21 @@ def cadastrar_usuario(usuarioschema: UsuarioSchema, db: Session):
 
     return usuario
 
-def login(email: str, senha: str, db: Session) -> dict:
-    usuario = db.query(Usuarios).filter(Usuarios.email == email.strip().lower()).first()
+def login(email: str, senha: str, db: Session, ip: str = 'desconhecido') -> dict:
+    email = email.strip().lower()
+    chave = f'{ip}|{email}'
+    limite_login.verificar(chave)  # antes de qualquer consulta: barra força bruta sem custo de banco/hash
+
+    usuario = db.query(Usuarios).filter(Usuarios.email == email).first()
 
     # Sempre verifica um hash (mesmo sem usuário) e sempre responde 401:
     # não revela se o email existe (LGPD / enumeração de contas).
     senha_ok = verificar_senha(senha, usuario.senha_hash if usuario else HASH_FALSO)
     if usuario is None or not senha_ok or not usuario.status:
+        limite_login.registrar_falha(chave)
         raise HTTPException(status_code=401, detail='Credenciais inválidas')
 
+    limite_login.limpar(chave)
     return emitir_tokens(usuario.id, db)
 
 def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):

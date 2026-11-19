@@ -53,8 +53,10 @@ def banco_limpo(client):
     """Cada teste começa com as tabelas vazias (TRUNCATE é bem mais rápido que recriar)
     e com a caixa de emails vazia."""
     from services import email_service
+    from security.limite_tentativas import limite_login
     settings.email_backend = 'memoria'
     email_service.caixa_de_saida.clear()
+    limite_login.resetar()
     yield
     with database.engine.begin() as conn:
         conn.execute(text(f'TRUNCATE {TABELAS} RESTART IDENTITY CASCADE'))
