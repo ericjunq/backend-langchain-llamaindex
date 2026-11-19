@@ -12,6 +12,7 @@ from models.convite_funcionario import Convite
 from security.permissoes import exigir_empresa, exigir_cargo
 from utils.enums import CargosEnum
 from utils.paginacao import Paginacao
+import services.auditoria_service as auditoria
 
 DADOS_EM_USO = 'Email, CNPJ ou telefone já cadastrado'
 
@@ -38,6 +39,8 @@ def criar_empresa(empresaschema: EmpresaCreate, db: Session, usuario: Usuarios):
 
     usuario.cargo = CargosEnum.dono
     usuario.empresa_id = empresa.id
+    auditoria.registrar(db, 'empresa.criada', usuario=usuario, empresa_id=empresa.id,
+                        entidade='empresa', entidade_id=empresa.id, detalhes={'nome': empresa.nome})
 
     try:
         db.commit()
@@ -70,6 +73,9 @@ def editar_empresa(dados: EmpresaUpdate, db: Session, usuario: Usuarios):
     for campo, valor in dados_update.items():
         setattr(empresa, campo, valor)
 
+    if dados_update:
+        auditoria.registrar(db, 'empresa.editada', usuario=usuario, entidade='empresa', entidade_id=empresa.id,
+                            detalhes={'campos': auditoria.campos_alterados(dados_update)})
     db.commit()
     db.refresh(empresa)
 
@@ -95,6 +101,9 @@ def editar_cargo(id: int, cargo: CargoUpdate, db: Session, usuario: Usuarios):
     if funcionario.cargo == CargosEnum.dono:
         raise HTTPException(status_code=403, detail='Não é possível alterar o cargo do dono')
 
+    auditoria.registrar(db, 'funcionario.cargo_alterado', usuario=usuario, entidade='usuario',
+                        entidade_id=funcionario.id,
+                        detalhes={'de': funcionario.cargo.value if funcionario.cargo else None, 'para': cargo.cargo.value})
     funcionario.cargo = cargo.cargo
     db.commit()
     db.refresh(funcionario)
@@ -110,6 +119,7 @@ def remover_funcionario(id: int, db: Session, usuario: Usuarios):
         raise HTTPException(status_code=403, detail='Você não pode remover a si mesmo da empresa')
 
     # O acesso à empresa cai na hora: get_current_user relê empresa_id do banco a cada requisição.
+    auditoria.registrar(db, 'funcionario.removido', usuario=usuario, entidade='usuario', entidade_id=funcionario.id)
     funcionario.empresa_id = None
     funcionario.cargo = None
     db.commit()
@@ -148,6 +158,8 @@ def criar_convite(db: Session, usuario: Usuarios):
     convite = Convite(token=secrets.token_urlsafe(32), empresa_id=usuario.empresa_id)
 
     db.add(convite)
+    db.flush()
+    auditoria.registrar(db, 'convite.criado', usuario=usuario, entidade='convite', entidade_id=convite.id)
     db.commit()
     db.refresh(convite)
 

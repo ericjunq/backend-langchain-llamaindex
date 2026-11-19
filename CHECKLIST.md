@@ -31,6 +31,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **2026-11-18**: usuário aprovou as recomendações: **`/api/v1`** (feito), migrações SQL versionadas, anonimização da conta, auditoria (escritas + exportações + eventos de login; retenção de 1 ano para acesso e 5 anos para o resto) e cancelamento de venda pelo chat com motivo.
 - **2026-11-18**: **migrações SQL versionadas** no lugar do `create_all`: `V001__estrutura_inicial.sql` (retrato dos models), executor com checksum, trava contra execução simultânea e transação por arquivo. Teste de paridade migrações × models. Banco `gestao` (vazio) recriado pelas migrações.
 - **2026-11-18**: **anonimização da conta** (`V002`: CPF/telefone anuláveis — 1ª migração incremental, aplicada sem recriar o banco). Nome vira "Usuário anonimizado", email `anonimizado-{id}@anonimizado.invalid`, CPF/telefone apagados, senha aleatória, sessões e ações do chat removidas, desvinculado da empresa; vendas/clientes continuam apontando para o registro. Dono não pode (409). Bug achado pelo teste e corrigido: refresh de conta desativada disparava "alerta de reuso" por email.
+- **2026-11-18**: **auditoria** (`V003`, `services/auditoria_service.py`, `GET /auditoria`): escritas de produtos, estoque, clientes, vendas (cancelamento com motivo), empresa, cargos, convites e conta; exportações; login/falha/logout geral/reuso de token. Registro na mesma transação da operação. Origem `api`/`chat`. 132 testes.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -52,6 +53,7 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 | Vendas | `POST /vendas` · `GET /vendas?usuario_id=&cliente_id=&status=&forma_pagamento=&periodo=` · `GET /vendas/{id}` · `POST /vendas/{id}/cancelar` |
 | Previsões (dono e admin) | `GET /previsoes/produtos/{id}?dias=30` · `GET /previsoes/reposicao?prazo_entrega=7&dias_cobertura=30&apenas_necessarios=true` |
 | Assistente | `POST /chat` (`{"mensagem", "historico": [{"papel": "usuario"/"assistente", "conteudo"}]}` → `{"resposta", "ferramentas_usadas", "acoes_pendentes"}`) · `POST /chat/acoes/{id}/confirmar` · `DELETE /chat/acoes/{id}` (cancelar) |
+| Auditoria (só dono) | `GET /auditoria?categoria=&acao=&entidade=&entidade_id=&usuario_id=&origem=&periodo=` |
 | Relatórios | `GET /relatorios/vendas` · `GET /relatorios/vendas/exportar` (só dono) · `GET /relatorios/produtos` · `GET /relatorios/produtos/exportar` (dono e admin) |
 
 Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|semestre|ano` **ou** `?data_inicial=&data_final=`.
@@ -167,4 +169,11 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Cada arquivo roda numa transação (o Postgres desfaz até DDL): uma falha não deixa o banco pela metade.
   - Recusa banco "criado sem migrações" (tem tabelas e não tem `schema_versao`) em vez de tentar adivinhar o estado.
   - O `V001` foi gerado uma vez pelo DDL dos models. A paridade é garantida por teste: cria um banco pelos models, outro pelas migrações, e compara colunas, tipos, nulos, índices, unicidades e FKs.
+- **2026-11-18**: auditoria. Decisões:
+  - `registrar()` só faz `db.add()`: entra na **mesma transação** da operação (falhou → sem log; deu certo → os dois juntos). Custo: 1 INSERT por escrita.
+  - **Categorias** definem a retenção: `acesso` (login, falhas, exportações, conta) = 1 ano; `operacao` e `venda` = 5 anos. DELETE pelo índice `(categoria, created_at)` na limpeza diária.
+  - LGPD: em entidades pessoais (usuário, cliente) os campos alterados aparecem só como "alterado"; senha nunca. **IP só em eventos de acesso** e **fora da resposta da API**. Falha de login com email inexistente **não guarda o email digitado**.
+  - Origem `chat` via `ContextVar` na confirmação das ações: os services não precisaram mudar de assinatura.
+  - Dinheiro guardado como texto (`"30.00"`), não float.
+  - Só o dono consulta (admin não); nenhuma rota edita ou apaga a trilha.
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

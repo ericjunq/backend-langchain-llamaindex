@@ -11,6 +11,7 @@ from models.usuario_model import Usuarios
 from security.permissoes import exigir_cargo, GESTORES
 from utils.enums import CargosEnum, StatusVenda
 from utils.data_filter import IntervaloData, filtros_intervalo
+import services.auditoria_service as auditoria
 
 TOP_N = 5
 TOP_N_PRODUTOS = 10
@@ -40,6 +41,16 @@ def _filtros_vendas(usuario: Usuarios, intervalo: Optional[IntervaloData]) -> li
     return [Vendas.empresa_id == usuario.empresa_id, *filtros_intervalo(Vendas.created_at, intervalo)]
 
 CONCLUIDA = Vendas.status != StatusVenda.cancelada
+
+
+def _registrar_exportacao(db: Session, usuario: Usuarios, relatorio: str, intervalo: Optional[IntervaloData]) -> None:
+    """Exportar é tirar dados (inclusive pessoais) do sistema em massa: fica na auditoria (LGPD)."""
+    periodo = None
+    if intervalo:
+        periodo = {'inicio': intervalo.inicio, 'fim': intervalo.fim}
+    auditoria.registrar(db, 'relatorio.exportado', usuario=usuario, categoria=auditoria.ACESSO,
+                        detalhes={'relatorio': relatorio, 'periodo': periodo})
+    db.commit()
 
 # =========================== Relatório de vendas ===========================
 
@@ -136,6 +147,7 @@ ABAS_VENDAS = {
 
 def exportar_relatorio_vendas(db: Session, usuario: Usuarios, intervalo: Optional[IntervaloData] = None) -> bytes:
     resumo, rankings = _dados_relatorio_vendas(db, usuario, intervalo)
+    _registrar_exportacao(db, usuario, 'vendas', intervalo)
     return _excel({'Resumo': [resumo], **{aba: rankings[chave] for chave, aba in ABAS_VENDAS.items()}})
 
 # ========================== Relatório de produtos ==========================
@@ -243,6 +255,7 @@ def relatorio_produtos(db: Session, usuario: Usuarios, intervalo: Optional[Inter
 
 def exportar_relatorio_produtos(db: Session, usuario: Usuarios, intervalo: Optional[IntervaloData] = None) -> bytes:
     resumo, secoes, tabela = _dados_relatorio_produtos(db, usuario, intervalo)
+    _registrar_exportacao(db, usuario, 'produtos', intervalo)
     return _excel({
         'Resumo': [resumo],
         'Produtos': tabela,

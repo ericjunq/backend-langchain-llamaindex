@@ -5,6 +5,7 @@ from models.refresh_token import RefreshToken
 from security.settings import settings
 from security.security import hash_token, token_confere, criar_access_token, criar_refresh_token
 from jose import jwt, JWTError
+import services.auditoria_service as auditoria
 
 TOKEN_INVALIDO = HTTPException(status_code=401, detail='Token inválido')
 
@@ -62,6 +63,7 @@ def refresh(token: str, db: Session) -> dict:
     # Detecção de reuso: um refresh já usado voltou → possível roubo. Derruba todas as sessões.
     if token_db.revoked:
         revogar_todos(usuario.id, db)
+        auditoria.registrar(db, 'token.reuso_detectado', usuario=usuario, categoria=auditoria.ACESSO)
         db.commit()
         import services.email_service as email_service
         email_service.avisar_sessao_comprometida(usuario.nome, usuario.email)
@@ -82,5 +84,6 @@ def logout_geral(token: str, db: Session) -> dict:
         raise TOKEN_INVALIDO
 
     revogar_todos(token_db.usuario_id, db)
+    auditoria.registrar(db, 'logout_geral', usuario=db.get(Usuarios, token_db.usuario_id), categoria=auditoria.ACESSO)
     db.commit()
     return {'message': 'Todas as sessões foram encerradas'}

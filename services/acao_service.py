@@ -13,6 +13,7 @@ from schemas.produto_schema import ProdutoReposicaoEstoque, ProdutoResponse
 from schemas.venda_schema import VendaResponse, VendaSchema
 import services.produto_service as produto_service
 import services.venda_service as venda_service
+import services.auditoria_service as auditoria
 
 REGISTRAR_VENDA = 'registrar_venda'
 REPOR_ESTOQUE = 'repor_estoque'
@@ -52,15 +53,16 @@ def confirmar(db: Session, usuario: Usuarios, id: str) -> dict:
     db.delete(acao)
     db.flush()
 
-    if tipo == REGISTRAR_VENDA:
-        venda = venda_service.criar_venda(VendaSchema(**dados), db, usuario)
-        resultado = VendaResponse.model_validate(venda, from_attributes=True)
-    elif tipo == REPOR_ESTOQUE:
-        produto = produto_service.repor_estoque(
-            dados['produto_id'], ProdutoReposicaoEstoque(quantidade=dados['quantidade']), db, usuario)
-        resultado = ProdutoResponse.model_validate(produto, from_attributes=True)
-    else:
-        raise HTTPException(status_code=400, detail='Tipo de ação desconhecido')
+    with auditoria.origem('chat'):
+        if tipo == REGISTRAR_VENDA:
+            venda = venda_service.criar_venda(VendaSchema(**dados), db, usuario)
+            resultado = VendaResponse.model_validate(venda, from_attributes=True)
+        elif tipo == REPOR_ESTOQUE:
+            produto = produto_service.repor_estoque(
+                dados['produto_id'], ProdutoReposicaoEstoque(quantidade=dados['quantidade']), db, usuario)
+            resultado = ProdutoResponse.model_validate(produto, from_attributes=True)
+        else:
+            raise HTTPException(status_code=400, detail='Tipo de ação desconhecido')
 
     return {'tipo': tipo, 'resultado': resultado.model_dump(mode='json')}
 

@@ -12,6 +12,7 @@ from security.permissoes import (exigir_empresa, exigir_cargo, exigir_membro,
 from utils.enums import CargosEnum
 from utils.data_filter import IntervaloData, filtros_intervalo
 from utils.paginacao import Paginacao
+import services.auditoria_service as auditoria
 
 def _query_ativos(db: Session, usuario: Usuarios):
     return db.query(Clientes).filter(
@@ -50,6 +51,8 @@ def criar_cliente(dados: ClienteCreate, db: Session, usuario: Usuarios):
     )
     db.add(cliente)
     try:
+        db.flush()
+        auditoria.registrar(db, 'cliente.criado', usuario=usuario, entidade='cliente', entidade_id=cliente.id)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -71,6 +74,9 @@ def editar_cliente(id: int, dados: ClienteUpdate, db: Session, usuario: Usuarios
     for campo, valor in dados_update.items():
         setattr(cliente, campo, valor)
 
+    if dados_update:
+        auditoria.registrar(db, 'cliente.editado', usuario=usuario, entidade='cliente', entidade_id=cliente.id,
+                            detalhes={'campos': auditoria.campos_alterados(dados_update, pessoais=True)})
     db.commit()
     db.refresh(cliente)
 
@@ -83,6 +89,7 @@ def deletar_cliente(id: int, db: Session, usuario: Usuarios):
     tem_vendas = db.query(Vendas.id).filter(Vendas.cliente_id == cliente.id).first() is not None
 
     if not tem_vendas:
+        auditoria.registrar(db, 'cliente.excluido', usuario=usuario, entidade='cliente', entidade_id=cliente.id)
         db.delete(cliente)
         db.commit()
         return {"message": "Cliente deletado com sucesso"}
@@ -94,6 +101,7 @@ def deletar_cliente(id: int, db: Session, usuario: Usuarios):
     cliente.cpf = None
     cliente.telefone = None
     cliente.status = False
+    auditoria.registrar(db, 'cliente.anonimizado', usuario=usuario, entidade='cliente', entidade_id=cliente.id)
     db.commit()
 
     return {"message": "Cliente possui vendas: dados pessoais anonimizados e cadastro desativado"}

@@ -12,6 +12,7 @@ from security.permissoes import exigir_empresa, exigir_membro, exigir_proprio_se
 from utils.enums import CargosEnum, StatusVenda
 from utils.data_filter import IntervaloData, filtros_intervalo
 from utils.paginacao import Paginacao
+import services.auditoria_service as auditoria
 
 def _travar_produtos(db: Session, ids, empresa_id: Optional[int] = None, so_ativos: bool = False) -> dict:
     """Busca vários produtos numa consulta só, com FOR UPDATE.
@@ -78,6 +79,11 @@ def criar_venda(vendaschema: VendaSchema, db: Session, usuario: Usuarios):
     venda.valor_final = valor_total - vendaschema.desconto
 
     db.add(venda)
+    db.flush()
+    auditoria.registrar(db, 'venda.criada', usuario=usuario, entidade='venda', entidade_id=venda.id,
+                        categoria=auditoria.VENDA,
+                        detalhes={'valor_final': venda.valor_final, 'itens': len(venda.itens),
+                                  'forma_pagamento': venda.forma_pagamento})
     db.commit()
     db.refresh(venda)
 
@@ -108,6 +114,9 @@ def cancelar_venda(id: int, cancelamento: CancelarVenda, db: Session, usuario: U
 
     venda.status = StatusVenda.cancelada
     venda.motivo_cancelamento = cancelamento.motivo_cancelamento
+    auditoria.registrar(db, 'venda.cancelada', usuario=usuario, entidade='venda', entidade_id=venda.id,
+                        categoria=auditoria.VENDA,
+                        detalhes={'motivo': cancelamento.motivo_cancelamento, 'valor_final': venda.valor_final})
 
     db.commit()
     db.refresh(venda)

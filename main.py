@@ -19,14 +19,18 @@ from routers.venda_routers import venda_router
 from routers.relatorio_routers import relatorio_router
 from routers.previsao_routers import previsao_router
 from routers.chat_routers import chat_router
+from routers.auditoria_routers import auditoria_router
+import services.auditoria_service as auditoria
 
 def limpar_dados_expirados() -> None:
-    """Retenção (LGPD): apaga refresh tokens, convites e ações do chat vencidos (DELETEs com índice em expires_at)."""
+    """Retenção (LGPD): apaga refresh tokens, convites e ações do chat vencidos e a auditoria fora do prazo
+    (DELETEs que usam índice: expires_at / (categoria, created_at))."""
     agora = datetime.now(timezone.utc)
     with LocalSession() as db:
         db.query(RefreshToken).filter(RefreshToken.expires_at < agora).delete(synchronize_session=False)
         db.query(Convite).filter(Convite.expires_at < agora).delete(synchronize_session=False)
         db.query(AcaoPendente).filter(AcaoPendente.expires_at < agora).delete(synchronize_session=False)
+        auditoria.limpar_vencidos(db, settings.auditoria_retencao_acesso_dias, settings.auditoria_retencao_demais_dias)
         db.commit()
 
 log = logging.getLogger('limpeza')
@@ -67,6 +71,6 @@ app.add_middleware(
 API_V1 = '/api/v1'
 api_v1 = APIRouter(prefix=API_V1)
 for router in (auth_router, usuario_router, convite_router, cliente_router, empresa_router, produto_router,
-               venda_router, relatorio_router, previsao_router, chat_router):
+               venda_router, relatorio_router, previsao_router, chat_router, auditoria_router):
     api_v1.include_router(router)
 app.include_router(api_v1)

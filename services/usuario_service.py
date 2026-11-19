@@ -12,6 +12,7 @@ import services.email_service as email_service
 from security.limite_tentativas import limite_login
 from utils.enums import CargosEnum
 from datetime import datetime, timezone
+import services.auditoria_service as auditoria
 
 DADOS_EM_USO = 'Email, CPF ou telefone já cadastrado'
 
@@ -35,6 +36,9 @@ def cadastrar_usuario(usuarioschema: UsuarioSchema, db: Session):
     )
     db.add(usuario)
     try:
+        db.flush()
+        auditoria.registrar(db, 'usuario.cadastrado', usuario=usuario, entidade='usuario', entidade_id=usuario.id,
+                            categoria=auditoria.ACESSO)
         db.commit()
     except IntegrityError:  # cadastro simultâneo com os mesmos dados
         db.rollback()
@@ -55,10 +59,14 @@ def login(email: str, senha: str, db: Session, ip: str = 'desconhecido') -> dict
     senha_ok = verificar_senha(senha, usuario.senha_hash if usuario else HASH_FALSO)
     if usuario is None or not senha_ok or not usuario.status:
         limite_login.registrar_falha(chave)
+        # Sem usuário identificado, não guarda o email digitado (pode nem ser de alguém daqui): só o IP.
+        auditoria.registrar(db, 'login.falhou', usuario=usuario, categoria=auditoria.ACESSO, ip=ip)
+        db.commit()
         raise HTTPException(status_code=401, detail='Credenciais inválidas')
 
     limite_login.limpar(chave)
-    return emitir_tokens(usuario.id, db)
+    auditoria.registrar(db, 'login', usuario=usuario, categoria=auditoria.ACESSO, ip=ip)
+    return emitir_tokens(usuario.id, db)  # o commit dos tokens grava o registro junto
 
 def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):
     dados_update = {
@@ -95,6 +103,9 @@ def editar_usuario(db: Session, dados: UsuarioUpdate, usuario: Usuarios):
     for campo, valor in dados_update.items():
         setattr(usuario, campo, valor)
 
+    auditoria.registrar(db, 'usuario.editado', usuario=usuario, entidade='usuario', entidade_id=usuario.id,
+                        categoria=auditoria.ACESSO,
+                        detalhes={'campos': auditoria.campos_alterados(dados_update, pessoais=True)})
     try:
         db.commit()
     except IntegrityError:
@@ -129,6 +140,10 @@ def exportar_meus_dados(db: Session, usuario: Usuarios) -> dict:
         .all()
     )
 
+    auditoria.registrar(db, 'dados_pessoais.exportados', usuario=usuario, entidade='usuario', entidade_id=usuario.id,
+                        categoria=auditoria.ACESSO)
+    db.commit()
+
     return {
         'gerado_em': agora,
         'perfil': {
@@ -161,6 +176,8 @@ def anonimizar_conta(db: Session, usuario: Usuarios, senha: str) -> dict:
         raise HTTPException(status_code=409, detail='O dono não pode anonimizar a conta enquanto for dono da empresa')
 
     nome, email = usuario.nome, usuario.email
+    auditoria.registrar(db, 'usuario.anonimizado', usuario=usuario, entidade='usuario', entidade_id=usuario.id,
+                        categoria=auditoria.ACESSO)
 
     revogar_todos(usuario.id, db)
     db.query(AcaoPendente).filter(AcaoPendente.usuario_id == usuario.id).delete(synchronize_session=False)
@@ -198,6 +215,8 @@ def vincular_empresa(token: UsarConvite, db: Session, usuario: Usuarios):
 
     usuario.empresa_id = convite.empresa_id
     usuario.cargo = CargosEnum.funcionario
+    auditoria.registrar(db, 'convite.aceito', usuario=usuario, empresa_id=convite.empresa_id,
+                        entidade='convite', entidade_id=convite.id)
     convite.usuario_id = usuario.id
     convite.usado = True
 
