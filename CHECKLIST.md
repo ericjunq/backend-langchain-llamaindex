@@ -35,7 +35,8 @@ Stack: FastAPI, SQLAlchemy 2 (só consultas), **migrações SQL versionadas** (`
 - **2026-11-18**: **cancelar venda pelo chat** (`cancelar_venda`): motivo **obrigatório** (3–60 caracteres; o modelo pergunta se faltar), mesmas regras da API já na preparação (funcionário só as próprias, outra empresa = não encontrada, já cancelada = erro), prévia com itens/valor/data, execução só na confirmação, auditoria com origem `chat`. Cadastro de clientes pelo chat: **não** (decisão do usuário: manual, mais atenção).
 - **2026-11-18**: **frontend Angular** decidido: pasta irmã `../frontend-angular` (git próprio), **Tailwind** sob medida, sessão com **refresh token em cookie httpOnly**. Backend ajustado: login/refresh devolvem só o access token; o refresh vai no cookie `httpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`.
 - **2026-11-18**: **frontend criado** em `../frontend-angular` (git próprio): **Angular 22.3** (atualizado do 21 com o projeto ainda vazio: corrigiu as vulnerabilidades das ferramentas, `npm audit` = 0), Tailwind 4, Vitest, zoneless. Etapa F1 pronta: layout com menu lateral responsivo por cargo, lazy loading, título por página, 404, pt-BR. ~78 kB no carregamento inicial. Rodar: `npm start` no frontend + `uvicorn main:app --reload` no backend → http://localhost:4200.
-  - Próximas etapas do frontend: F2 autenticação → F3 painel → F4 produtos → F5 clientes → F6 vendas → F7 equipe → F8 relatórios/previsões/auditoria → F9 assistente → F10 minha conta.
+- **2026-11-18**: **F2 autenticação** pronta no frontend: entrar, criar conta (com aviso de finalidade dos dados), bem-vindo (criar empresa / aceitar convite), sessão em memória + cookie httpOnly, renovação automática e única, guardas por login/empresa/cargo. 36 testes no frontend; fluxo verificado de ponta a ponta pelo proxy (banco temporário `gestao_e2e`, apagado).
+  - Próximas etapas do frontend: ~~F2 autenticação~~ ✅ → F3 painel → F4 produtos → F5 clientes → F6 vendas → F7 equipe → F8 relatórios/previsões/auditoria → F9 assistente → F10 minha conta.
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -192,4 +193,10 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - Ícones: pacote `lucide` (ISC, sem framework) + componente próprio, porque o `lucide-angular` ainda não declara suporte ao Angular 22 (forçar com `--legacy-peer-deps` seria arriscado).
   - npm 11 bloqueia scripts de instalação por padrão (esbuild, lmdb…): mantidos **bloqueados**, já que o build funciona sem eles (menos superfície para pacote malicioso).
   - O frontend tem CLAUDE.md próprio, mas a trilha de ideias do projeto inteiro continua **neste** CHECKLIST.
+- **2026-11-18**: F2 (autenticação no frontend). Decisões:
+  - Access token **só em memória** (signal): recarregar a página → `POST /auth/refresh` com o cookie recupera a sessão (no `provideAppInitializer`, antes da primeira tela).
+  - **Renovação única** (`shareReplay`): vários 401 ao mesmo tempo → 1 refresh. Sem isso, dois refresh com o mesmo cookie disparariam a "detecção de reuso" da API e derrubariam todas as sessões do usuário.
+  - Renovação **agendada** 1 min antes do vencimento (o usuário não vê 401).
+  - `?voltar=` só com caminho interno (`/x`, nunca `//x` ou `https://`): evita open redirect.
+  - Código do convite colado no formulário (vai no corpo); quando a tela de convites existir (F7), o link usará `#fragmento` (não vai ao servidor nem aos logs).
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).
