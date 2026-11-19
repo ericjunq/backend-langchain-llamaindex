@@ -1,6 +1,9 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, LocalSession
 from security.settings import settings
@@ -25,12 +28,27 @@ def limpar_dados_expirados() -> None:
         db.query(AcaoPendente).filter(AcaoPendente.expires_at < agora).delete(synchronize_session=False)
         db.commit()
 
+log = logging.getLogger('limpeza')
+
+async def rotina_limpeza(intervalo_horas: float) -> None:
+    """Retenção contínua: repete a limpeza a cada `intervalo_horas` enquanto a API estiver no ar.
+    Roda numa thread do pool (o DELETE é síncrono) para não travar as requisições. Com vários
+    workers, cada um roda a sua: inofensivo, porque o DELETE é idempotente."""
+    while True:
+        await asyncio.sleep(intervalo_horas * 3600)
+        try:
+            await run_in_threadpool(limpar_dados_expirados)
+        except Exception:
+            log.exception('Falha na limpeza agendada de dados expirados')
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Sem migrações: a estrutura vem dos models. Mudou model → recriar o banco (ver CLAUDE.md).
     Base.metadata.create_all(bind=engine)
     limpar_dados_expirados()
+    tarefa = asyncio.create_task(rotina_limpeza(settings.limpeza_intervalo_horas))
     yield
+    tarefa.cancel()
 
 app = FastAPI(title='Gestão Comercial API', lifespan=lifespan)
 

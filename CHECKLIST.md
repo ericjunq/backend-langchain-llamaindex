@@ -26,6 +26,8 @@ Stack: FastAPI, SQLAlchemy 2 (sem Alembic), Pydantic v2, PostgreSQL (psycopg 3),
 - **2026-11-18**: **emails de aviso** (`services/email_service.py`): troca de senha, troca de email (para os dois endereços) e alerta de sessão comprometida. Backends `console` (dev, só loga o destinatário mascarado), `smtp` (em segundo plano, STARTTLS) e `memoria` (testes).
 - **2026-11-18**: **exportar meus dados** (`GET /usuarios/me/dados`, sem cache): perfil completo, empresa, sessões ativas e resumo de atividade. Não inclui hashes nem dados de clientes (pertencem a eles).
 - **2026-11-18**: **limite de tentativas de login** (`security/limite_tentativas.py`): 5 falhas em 15 min por **IP + email** → 429. Só pelo email, um atacante bloquearia contas alheias de propósito; só pelo IP, testaria muitas contas. Checado antes de consultar o banco (barra a força bruta sem custo).
+- **2026-11-18**: **limpeza agendada**: tarefa em segundo plano no lifespan (sem dependência nova), roda numa thread do pool a cada 24 h. Com vários workers cada um roda a sua, o que é inofensivo (DELETE idempotente).
+- **Pendente (decisão do usuário)**: (a) adotar migrações em SQL puro versionadas + prefixo `/api/v1` já, ou (b) só antes de produção; escopo e retenção da **auditoria**. A anonimização da conta e a auditoria esperam essa decisão (mudam o banco).
 - **Próximos passos sugeridos:**
   1. ~~Relatório de produtos~~ ✅ · ~~Previsão v1~~ ✅ · ~~Chat (leitura)~~ ✅
   2. ~~Ações com confirmação no chat~~ ✅
@@ -72,7 +74,7 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
 
 - [x] Testes automatizados no repositório (60 testes)
 - [ ] Teste de concorrência real (duas vendas simultâneas do último item). Hoje o `FOR UPDATE` só é coberto indiretamente
-- [ ] Limpeza de dados vencidos só roda ao iniciar → agendar (ex.: tarefa diária)
+- [x] Limpeza de dados vencidos agendada (ao iniciar + a cada `LIMPEZA_INTERVALO_HORAS`, padrão 24 h)
 - [x] Email de aviso: troca de senha, troca de email (antigo e novo) e sessão comprometida. Backend `console` em dev; SMTP via `.env`
 - [x] Direitos do titular: exportar "meus dados" (`GET /usuarios/me/dados`)
 - [ ] Direitos do titular: anonimizar a própria conta (aguarda a decisão sobre migrações: muda o model `usuarios`)
@@ -146,4 +148,8 @@ Em todas as listagens: `?limite=50&offset=0` e filtro de data `?periodo=mes|seme
   - **Lição do teste real nº 2:** o qwen3:8b inventou um `produto_id` em vez de buscar antes. As ferramentas passaram a receber **nome (ou código) do produto e nome do cliente** e resolvem por dentro. Nome ambíguo → erro com as opções, para o modelo perguntar ao usuário.
   - **Lição nº 3:** citar o botão "Confirmar" no prompt fazia o modelo mencioná-lo até em consultas. A instrução de confirmação só vem na resposta da ferramenta de escrita (`situacao`).
 - **2026-11-18**: segurança do Ollama. A falta de senha na API não é um bug "a corrigir": é de projeto. A proteção é a configuração (escutar só no localhost) + o firewall como segunda camada. O Angular nunca fala direto com o Ollama, só com o backend.
+- **2026-11-18**: discussão de próximos passos com o usuário:
+  - Cadastro de clientes fica **manual** (mais atenção, menos risco). Cancelar venda pelo chat: sim, com **motivo obrigatório** e confirmação.
+  - **Auditoria**: registrar escritas (criar/editar/excluir, vendas, estoque, cargos, convites, conta). GETs não, **exceto**: exportações (Excel e "meus dados": saída de dado pessoal em massa) e eventos de segurança (login, falha de login, reuso de token). O log também é dado pessoal: guardar quem/o quê/quando/origem/campos alterados (CPF/email/telefone/senha só como "alterado"); retenção proposta: 1 ano (acesso) e 5 anos (vendas, possível exigência fiscal); só o dono consulta; ninguém edita/apaga.
+  - **Migrações**: o usuário propôs SQL puro versionado (estrutura e dados) e versionamento da API (v1 → v2 com período de transição). Proposta: arquivos `V001__x.sql` + tabela `schema_versao` (estilo Flyway), ORM só para as consultas, teste que compara o banco migrado com os models; `/api/v1` agora; mudanças incompatíveis no padrão **expandir e contrair** (a v1 recebe os cabeçalhos `Deprecation`/`Sunset` até sair).
 - **2026-11-18**: regra combinada: **um commit por alteração**, no formato `tipo: descrição` (feat, fix, refactor, test, docs, chore).

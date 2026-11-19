@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     ollama_modelo: str = 'qwen3:8b'
     chat_max_passos: int = 5        # chamadas de ferramenta por mensagem (limita tempo e loops)
     chat_timeout_segundos: int = 120
+    # Retenção: de quanto em quanto tempo apagar tokens, convites e ações do chat vencidos
+    limpeza_intervalo_horas: float = 24
     # Limite de login: falhas por (IP + email) dentro da janela → 429
     login_max_falhas: int = 5
     login_janela_minutos: int = 15
